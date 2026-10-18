@@ -1,0 +1,928 @@
+<UserControl x:Class="CarPartManager.Views.CustomersView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:viewmodels="clr-namespace:CarPartManager.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=viewmodels:CustomersViewModel}"
+             d:DesignHeight="800" d:DesignWidth="1280"
+             FlowDirection="RightToLeft">
+
+    <Grid Margin="28,24,28,28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ══════════════════════════ ترويسة الشاشة ═══════════════════════════ -->
+        <Grid Grid.Row="0" Margin="0,0,0,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="إدارة العملاء"
+                           FontSize="22" FontWeight="Bold"
+                           Foreground="{StaticResource TextPrimaryBrush}" />
+                <TextBlock Text="قائمة العملاء · كشوف الحسابات · تسجيل الدفعات والمستحقات"
+                           FontSize="13"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Margin="0,4,0,0" />
+            </StackPanel>
+
+            <!-- زر العودة (مرئي في أوضاع الكشف والدفعة) -->
+            <Button Grid.Column="1"
+                    Command="{Binding BackToListCommand}"
+                    Padding="14,0" Height="36">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource OutlineButtonStyle}">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsListMode}" Value="False">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+                <StackPanel Orientation="Horizontal">
+                    <Path Data="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
+                          Fill="{StaticResource TextSecondaryBrush}"
+                          Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" />
+                    <TextBlock Text="العودة للقائمة" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- ══════════════════ وضع القائمة (List Mode) ═════════════════════════ -->
+        <Grid Grid.Row="1">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsListMode}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="20" />
+                <ColumnDefinition Width="390" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ── الجدول الرئيسي ──────────────────────────────────────────── -->
+            <Border Grid.Column="0" Style="{StaticResource ContentPanelCardStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- شريط البحث والفلاتر -->
+                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                        <Border Background="#F8FAFC"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="8"
+                                Padding="12,6" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Path Grid.Column="0"
+                                      Data="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+                                      Fill="{StaticResource TextSecondaryBrush}"
+                                      Width="16" Height="16" Stretch="Uniform"
+                                      VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                         BorderThickness="0" Background="Transparent"
+                                         FontSize="13" VerticalContentAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- أزرار الفلتر -->
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="الكل"
+                                    Command="{Binding FilterAllCommand}"
+                                    Height="28" Padding="12,0" FontSize="11" Margin="0,0,6,0">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource OutlineButtonStyle}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding FilterMode}" Value="all">
+                                                <Setter Property="Background" Value="{StaticResource PrimaryBlueBrush}" />
+                                                <Setter Property="Foreground" Value="White" />
+                                                <Setter Property="BorderBrush" Value="{StaticResource PrimaryBlueBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Content="النشطون"
+                                    Command="{Binding FilterActiveCommand}"
+                                    Height="28" Padding="12,0" FontSize="11" Margin="0,0,6,0">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource OutlineButtonStyle}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding FilterMode}" Value="active">
+                                                <Setter Property="Background" Value="{StaticResource SalesGreenBrush}" />
+                                                <Setter Property="Foreground" Value="White" />
+                                                <Setter Property="BorderBrush" Value="{StaticResource SalesGreenBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Content="لديهم رصيد"
+                                    Command="{Binding FilterBalanceCommand}"
+                                    Height="28" Padding="12,0" FontSize="11">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource OutlineButtonStyle}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding FilterMode}" Value="has_balance">
+                                                <Setter Property="Background" Value="{StaticResource AlertRedBrush}" />
+                                                <Setter Property="Foreground" Value="White" />
+                                                <Setter Property="BorderBrush" Value="{StaticResource AlertRedBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- حالة التحميل -->
+                    <StackPanel Grid.Row="1"
+                                HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="جارٍ تحميل بيانات العملاء..."
+                                   FontSize="14"
+                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                    </StackPanel>
+
+                    <!-- حالة القائمة الفارغة -->
+                    <StackPanel Grid.Row="1"
+                                HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ShowEmpty}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <Path Data="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
+                              Fill="{StaticResource TextMutedBrush}"
+                              Width="48" Height="48" Stretch="Uniform"
+                              HorizontalAlignment="Center" Margin="0,0,0,12" />
+                        <TextBlock Text="لا يوجد عملاء"
+                                   FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="أضف أول عميل باستخدام النموذج على اليسار"
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   HorizontalAlignment="Center" Margin="0,4,0,0" />
+                    </StackPanel>
+
+                    <!-- جدول العملاء -->
+                    <DataGrid Grid.Row="1"
+                              ItemsSource="{Binding FilteredCustomers}"
+                              SelectedItem="{Binding SelectedCustomer, Mode=TwoWay}">
+                        <DataGrid.Style>
+                            <Style TargetType="DataGrid" BasedOn="{StaticResource CleanDataGridStyle}">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ShowEmpty}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.Style>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="#" Binding="{Binding Id}" Width="45" />
+
+                            <!-- اسم العميل -->
+                            <DataGridTemplateColumn Header="اسم العميل" Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel VerticalAlignment="Center" Margin="0,4,0,4">
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Name}" />
+                                            <TextBlock Text="{Binding Address}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Address}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- الهاتف -->
+                            <DataGridTextColumn Header="الهاتف"
+                                                Binding="{Binding Phone}" Width="120" />
+
+                            <!-- الرصيد -->
+                            <DataGridTemplateColumn Header="الرصيد المستحق" Width="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="4" Padding="8,3"
+                                                HorizontalAlignment="Center" Margin="0,3">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="#F0FDF4" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasBalance}" Value="True">
+                                                            <Setter Property="Background" Value="#FEF2F2" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock FontSize="12" FontWeight="Bold">
+                                                <TextBlock.Text>
+                                                    <Binding Path="CurrentBalance" StringFormat="{}{0:N2}" />
+                                                </TextBlock.Text>
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="#059669" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasBalance}" Value="True">
+                                                                <Setter Property="Foreground" Value="#DC2626" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- الحالة -->
+                            <DataGridTemplateColumn Header="الحالة" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="4" Padding="8,2"
+                                                HorizontalAlignment="Center" Margin="0,3">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="#DCFCE7" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsActive}" Value="False">
+                                                            <Setter Property="Background" Value="#FEE2E2" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{Binding StatusText}"
+                                                       FontSize="11" FontWeight="SemiBold">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="#166534" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsActive}" Value="False">
+                                                                <Setter Property="Foreground" Value="#991B1B" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- أزرار الإجراءات -->
+                            <DataGridTemplateColumn Header="إجراءات" Width="190">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="4,2">
+                                            <Button Content="كشف الحساب"
+                                                    Command="{Binding DataContext.ShowStatementCommand,
+                                                        RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                    Style="{StaticResource OutlineButtonStyle}"
+                                                    Height="26" Padding="8,0" FontSize="11"
+                                                    Margin="0,0,4,0" />
+                                            <Button Content="تحصيل دفعة"
+                                                    Command="{Binding DataContext.ShowPaymentCommand,
+                                                        RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                    Style="{StaticResource PrimaryButtonStyle}"
+                                                    Height="26" Padding="8,0" FontSize="11" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <!-- تذييل -->
+                    <Border Grid.Row="2" Margin="0,12,0,0" Padding="0,8,0,0"
+                            BorderThickness="0,1,0,0" BorderBrush="{StaticResource BorderBrush}">
+                        <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}">
+                            <Run Text="إجمالي العملاء بالقائمة: " />
+                            <Run Text="{Binding FilteredCustomers.Count, Mode=OneWay}"
+                                 FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                        </TextBlock>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- ── لوحة الإضافة / التعديل ──────────────────────────────────── -->
+            <Border Grid.Column="2" Style="{StaticResource ContentPanelCardStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <!-- ترويسة النموذج -->
+                        <Border Margin="0,0,0,16" Padding="0,0,0,12"
+                                BorderThickness="0,0,0,1"
+                                BorderBrush="{StaticResource BorderBrush}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="بيانات العميل"
+                                               FontWeight="Bold" FontSize="15"
+                                               Foreground="{StaticResource TextPrimaryBrush}" />
+                                    <TextBlock Text="حدد عميلاً للتعديل أو أدخل بيانات لإضافة جديد"
+                                               FontSize="11"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               Margin="0,2,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Style="{StaticResource OutlineButtonStyle}"
+                                        Command="{Binding ClearFormCommand}"
+                                        Height="28" Padding="8,0" FontSize="11"
+                                        Content="تفريغ" />
+                            </Grid>
+                        </Border>
+
+                        <!-- اسم العميل -->
+                        <TextBlock Text="اسم العميل *"
+                                   FontWeight="SemiBold" FontSize="12"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="0,0,0,6" />
+                        <TextBox Style="{StaticResource StandardTextBoxStyle}"
+                                 Text="{Binding FormName, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="0,0,0,12" />
+
+                        <!-- رقم الهاتف -->
+                        <TextBlock Text="رقم الهاتف (اختياري)"
+                                   FontWeight="SemiBold" FontSize="12"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="0,0,0,6" />
+                        <TextBox Style="{StaticResource StandardTextBoxStyle}"
+                                 Text="{Binding FormPhone, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="0,0,0,12" />
+
+                        <!-- العنوان -->
+                        <TextBlock Text="العنوان (اختياري)"
+                                   FontWeight="SemiBold" FontSize="12"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="0,0,0,6" />
+                        <TextBox Style="{StaticResource StandardTextBoxStyle}"
+                                 Text="{Binding FormAddress, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="0,0,0,12" />
+
+                        <!-- الرصيد الافتتاحي -->
+                        <TextBlock Text="الرصيد الافتتاحي"
+                                   FontWeight="SemiBold" FontSize="12"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="المبلغ الذي كان مستحقاً قبل بدء التتبع في النظام"
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Margin="0,0,0,6" />
+                        <TextBox Style="{StaticResource StandardTextBoxStyle}"
+                                 Text="{Binding FormOpeningBalanceText, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="0,0,0,12" />
+
+                        <!-- الملاحظات -->
+                        <TextBlock Text="ملاحظات (اختياري)"
+                                   FontWeight="SemiBold" FontSize="12"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="0,0,0,6" />
+                        <TextBox Style="{StaticResource StandardTextBoxStyle}"
+                                 Text="{Binding FormNotes, UpdateSourceTrigger=PropertyChanged}"
+                                 Height="60" AcceptsReturn="True" TextWrapping="Wrap"
+                                 VerticalContentAlignment="Top" Margin="0,0,0,14" />
+
+                        <!-- حالة النشاط -->
+                        <CheckBox Content="العميل نشط"
+                                  IsChecked="{Binding FormIsActive}"
+                                  FontWeight="SemiBold" FontSize="12"
+                                  Foreground="{StaticResource TextPrimaryBrush}"
+                                  Margin="0,0,0,16" />
+
+                        <!-- رسالة الحالة -->
+                        <TextBlock Text="{Binding StatusMessage}"
+                                   FontSize="12" FontWeight="SemiBold"
+                                   TextWrapping="Wrap" Margin="0,0,0,12">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource PrimaryBlueBrush}" />
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsStatusError}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource AlertRedBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding StatusMessage}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <!-- زر الحفظ -->
+                        <Button Style="{StaticResource PrimaryButtonStyle}"
+                                Command="{Binding SaveCustomerCommand}"
+                                Height="40" Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"
+                                      Fill="#FFFFFF" Width="14" Height="14"
+                                      Stretch="Uniform" Margin="0,0,8,0" />
+                                <TextBlock Text="حفظ بيانات العميل"
+                                           FontWeight="Bold" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- زر التعطيل / التفعيل (يظهر عند تحديد عميل) -->
+                        <Button Command="{Binding ToggleActiveCommand}" Height="36"
+                                IsEnabled="{Binding HasSelectedCustomer}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource OutlineButtonStyle}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasSelectedCustomer}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
+                                      Width="13" Height="13" Stretch="Uniform" Margin="0,0,8,0">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <Setter Property="Fill" Value="{StaticResource WarningAmberBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedCustomer.IsActive}" Value="False">
+                                                    <Setter Property="Fill" Value="{StaticResource SalesGreenBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                                <TextBlock VerticalAlignment="Center" FontWeight="SemiBold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="تعطيل العميل" />
+                                            <Setter Property="Foreground" Value="{StaticResource WarningAmberBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedCustomer.IsActive}" Value="False">
+                                                    <Setter Property="Text" Value="إعادة تفعيل العميل" />
+                                                    <Setter Property="Foreground" Value="{StaticResource SalesGreenBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- ══════════════════ وضع كشف الحساب (Statement Mode) ════════════════ -->
+        <Grid Grid.Row="1">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsStatementMode}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- ترويسة كشف الحساب -->
+            <Border Grid.Row="0" Style="{StaticResource ContentPanelCardStyle}"
+                    Margin="0,0,0,16" Padding="16,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock FontSize="17" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}">
+                            <Run Text="كشف حساب: " />
+                            <Run Text="{Binding StatementCustomer.Name}" />
+                        </TextBlock>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <TextBlock Text="الهاتف: " FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBlock Text="{Binding StatementCustomer.Phone}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Margin="4,0,16,0" />
+                            <TextBlock Text="الرصيد المستحق: " FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBlock Text="{Binding StatementCustomer.CurrentBalance, StringFormat={}{0:N2}}"
+                                       FontSize="13" FontWeight="Bold" Margin="4,0,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#059669" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding StatementCustomer.HasBalance}" Value="True">
+                                                <Setter Property="Foreground" Value="#DC2626" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- فلتر التاريخ -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="من:" VerticalAlignment="Center"
+                                   Margin="0,0,6,0" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                        <DatePicker SelectedDate="{Binding StatementFrom}"
+                                    Width="130" Margin="0,0,10,0" />
+                        <TextBlock Text="إلى:" VerticalAlignment="Center"
+                                   Margin="0,0,6,0" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                        <DatePicker SelectedDate="{Binding StatementTo}"
+                                    Width="130" Margin="0,0,12,0" />
+                        <Button Style="{StaticResource PrimaryButtonStyle}"
+                                Command="{Binding ShowPaymentCommand}"
+                                Height="36" Padding="14,0">
+                            <TextBlock Text="تحصيل دفعة" FontWeight="Bold" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- جدول كشف الحساب -->
+            <Border Grid.Row="1" Style="{StaticResource ContentPanelCardStyle}">
+                <DataGrid Style="{StaticResource CleanDataGridStyle}"
+                          ItemsSource="{Binding StatementLines}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="التاريخ"
+                                            Binding="{Binding Date, StringFormat={}{0:d/M/yyyy}}"
+                                            Width="95" />
+
+                        <DataGridTemplateColumn Header="نوع الحركة" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border CornerRadius="4" Padding="6,2"
+                                            HorizontalAlignment="Center" Margin="0,2">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#EEF2FF" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsPayment}" Value="True">
+                                                        <Setter Property="Background" Value="#DCFCE7" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding EntryType}" Value="رصيد افتتاحي">
+                                                        <Setter Property="Background" Value="#FEF3C7" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="{Binding EntryType}"
+                                                   FontSize="11" FontWeight="SemiBold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#3730A3" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsPayment}" Value="True">
+                                                            <Setter Property="Foreground" Value="#166534" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding EntryType}" Value="رصيد افتتاحي">
+                                                            <Setter Property="Foreground" Value="#92400E" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTextColumn Header="المرجع"
+                                            Binding="{Binding Reference}" Width="110" />
+
+                        <DataGridTemplateColumn Header="البيان" Width="*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Description}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding Description}"
+                                               VerticalAlignment="Center" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <!-- مدين -->
+                        <DataGridTemplateColumn Header="مدين ▲" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock
+                                        Text="{Binding DebitAmount, StringFormat={}{0:N2}}"
+                                        FontWeight="SemiBold"
+                                        Foreground="#DC2626"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding DebitAmount}" Value="0">
+                                                        <Setter Property="Visibility" Value="Hidden" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <!-- دائن -->
+                        <DataGridTemplateColumn Header="دائن ▼" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock
+                                        Text="{Binding CreditAmount, StringFormat={}{0:N2}}"
+                                        FontWeight="SemiBold"
+                                        Foreground="#059669"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding CreditAmount}" Value="0">
+                                                        <Setter Property="Visibility" Value="Hidden" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <!-- الرصيد التراكمي -->
+                        <DataGridTemplateColumn Header="الرصيد" Width="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock
+                                        Text="{Binding RunningBalance, StringFormat={}{0:N2}}"
+                                        FontWeight="Bold"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#059669" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding RunningBalance}" Value="0">
+                                                        <Setter Property="Foreground" Value="#059669" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
+
+            <!-- ملخص كشف الحساب -->
+            <Border Grid.Row="2" Style="{StaticResource ContentPanelCardStyle}"
+                    Margin="0,16,0,0" Padding="20,14">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                        <TextBlock Text="إجمالي المبيعات"
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="{Binding StatementTotalDebit, StringFormat={}{0:N2}}"
+                                   FontSize="18" FontWeight="Bold"
+                                   Foreground="#DC2626"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                        <TextBlock Text="إجمالي المدفوع"
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="{Binding StatementTotalCredit, StringFormat={}{0:N2}}"
+                                   FontSize="18" FontWeight="Bold"
+                                   Foreground="#059669"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                        <TextBlock Text="الرصيد الختامي المستحق"
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="{Binding StatementFinalBalance, StringFormat={}{0:N2}}"
+                                   FontSize="20" FontWeight="Bold"
+                                   HorizontalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#059669" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatementCustomer.HasBalance}" Value="True">
+                                            <Setter Property="Foreground" Value="#DC2626" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ══════════════════ وضع تسجيل الدفعة (Payment Mode) ════════════════ -->
+        <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsPaymentMode}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+
+            <Border Style="{StaticResource ContentPanelCardStyle}"
+                    Width="500" Padding="28,24">
+                <StackPanel>
+                    <!-- ترويسة -->
+                    <TextBlock FontSize="17" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="0,0,0,4">
+                        <Run Text="تحصيل دفعة — " />
+                        <Run Text="{Binding SelectedCustomer.Name}" />
+                    </TextBlock>
+
+                    <!-- بطاقة الرصيد الحالي -->
+                    <Border Margin="0,0,0,16" Padding="12,8" CornerRadius="6"
+                            Background="#EEF2FF">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="الرصيد الحالي المستحق: "
+                                       FontSize="12"
+                                       Foreground="{StaticResource InvoicesIndigoBrush}"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding SelectedCustomer.CurrentBalance, StringFormat={}{0:N2}}"
+                                       FontSize="14" FontWeight="Bold"
+                                       Margin="6,0,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#059669" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedCustomer.HasBalance}" Value="True">
+                                                <Setter Property="Foreground" Value="#DC2626" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- المبلغ -->
+                    <TextBlock Text="مبلغ الدفعة *"
+                               FontWeight="SemiBold" FontSize="12"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="0,0,0,6" />
+                    <TextBox Style="{StaticResource StandardTextBoxStyle}"
+                             Text="{Binding PaymentAmountText, UpdateSourceTrigger=PropertyChanged}"
+                             FontSize="16" Height="42" Margin="0,0,0,14" />
+
+                    <!-- تاريخ -->
+                    <TextBlock Text="تاريخ الاستلام *"
+                               FontWeight="SemiBold" FontSize="12"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="0,0,0,6" />
+                    <DatePicker SelectedDate="{Binding PaymentDate}"
+                                Height="36" Margin="0,0,0,14" />
+
+                    <!-- طريقة الدفع -->
+                    <TextBlock Text="طريقة الدفع *"
+                               FontWeight="SemiBold" FontSize="12"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="0,0,0,6" />
+                    <ComboBox ItemsSource="{Binding PaymentMethods}"
+                              SelectedItem="{Binding PaymentMethod}"
+                              Height="36" Margin="0,0,0,14" />
+
+                    <!-- ملاحظات -->
+                    <TextBlock Text="ملاحظات (اختياري)"
+                               FontWeight="SemiBold" FontSize="12"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="0,0,0,6" />
+                    <TextBox Style="{StaticResource StandardTextBoxStyle}"
+                             Text="{Binding PaymentNotes, UpdateSourceTrigger=PropertyChanged}"
+                             Height="60" AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalContentAlignment="Top" Margin="0,0,0,16" />
+
+                    <!-- رسالة خطأ -->
+                    <TextBlock Text="{Binding StatusMessage}"
+                               FontSize="12" FontWeight="SemiBold"
+                               TextWrapping="Wrap" Margin="0,0,0,12"
+                               Foreground="{StaticResource AlertRedBrush}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsStatusError}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- أزرار -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Button Grid.Column="0"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Command="{Binding SavePaymentCommand}"
+                                Height="42">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"
+                                      Fill="White" Width="14" Height="14"
+                                      Stretch="Uniform" Margin="0,0,8,0" />
+                                <TextBlock Text="تسجيل الدفعة"
+                                           FontWeight="Bold" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button Grid.Column="2"
+                                Style="{StaticResource OutlineButtonStyle}"
+                                Command="{Binding BackToListCommand}"
+                                Height="42" Content="إلغاء" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

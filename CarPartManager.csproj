@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <!-- استثناء مجلد النسخ الاحتياطية أو المجلدات الإضافية من التجميع لمنع تكرار الكلاسات -->
+  <ItemGroup>
+    <Compile Remove="New folder\**" />
+    <Page Remove="New folder\**" />
+    <None Include="New folder\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
+  </ItemGroup>
+
+</Project>

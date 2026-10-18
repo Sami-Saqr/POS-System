@@ -1,0 +1,168 @@
+<Window x:Class="CarPartManager.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewmodels="clr-namespace:CarPartManager.ViewModels"
+        mc:Ignorable="d"
+        Title="نظام إدارة قطع غيار السيارات - CarPartsManager" 
+        Height="820" Width="1340"
+        MinHeight="680" MinWidth="1040"
+        WindowStartupLocation="CenterScreen"
+        FlowDirection="RightToLeft"
+        FontFamily="{StaticResource AppFontFamily}"
+        Background="{StaticResource AppBackgroundBrush}">
+
+    <Window.DataContext>
+        <viewmodels:MainViewModel />
+    </Window.DataContext>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <!-- القائمة الجانبية (Sidebar) في الجهة اليمنى لأن الواجهة RTL -->
+            <ColumnDefinition Width="260" />
+            <!-- منطقة المحتوى الرئيسي في الجهة اليسرى -->
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ================= الشريط الجانبي (Sidebar) ================= -->
+        <Border Grid.Column="0" Background="{StaticResource SidebarBackgroundBrush}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <!-- شعار واسم المتجر -->
+                    <RowDefinition Height="Auto" />
+                    <!-- قائمة عناصر التنقل -->
+                    <RowDefinition Height="*" />
+                    <!-- بيانات الفرع والنسخة في الأسفل -->
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- ترويسة الشريط الجانبي (Brand Header) -->
+                <Border Grid.Row="0" Padding="18,22" BorderThickness="0,0,0,1" BorderBrush="#1E293B">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- أيقونة الشعار (عجلة وترس لقطع الغيار) -->
+                        <Border Grid.Column="0" Background="{StaticResource PrimaryBlueBrush}" CornerRadius="10" Width="44" Height="44" Margin="0,0,12,0">
+                            <Path Data="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" 
+                                  Fill="#FFFFFF" Width="22" Height="22" Stretch="Uniform" />
+                        </Border>
+
+                        <!-- اسم التطبيق بالعربي والإنجليزي -->
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="CarPartsManager" FontSize="15" FontWeight="Bold" Foreground="#FFFFFF" />
+                            <TextBlock Text="إدارة محلات قطع الغيار" FontSize="11" Foreground="{StaticResource SidebarTextBrush}" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- قائمة التنقل (Navigation List) -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,10,0,10">
+                    <ItemsControl ItemsSource="{Binding NavigationItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource SidebarNavButtonStyle}"
+                                        Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- الأيقونة -->
+                                        <Path Grid.Column="0"
+                                              Data="{Binding IconPathData}" 
+                                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" 
+                                              Width="17" Height="17" 
+                                              Stretch="Uniform" 
+                                              Margin="0,0,12,0" 
+                                              VerticalAlignment="Center" />
+
+                                        <!-- نص القسم -->
+                                        <TextBlock Grid.Column="1" 
+                                                   Text="{Binding Title}" 
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- بطاقة النسخة والمتجر في أسفل القائمة -->
+                <Border Grid.Row="2" Background="#0A0F1D" Padding="16,14" BorderThickness="0,1,0,0" BorderBrush="#1E293B">
+                    <StackPanel>
+                        <TextBlock Text="{Binding StoreName}" FontSize="12" FontWeight="SemiBold" Foreground="#E2E8F0" />
+                        <TextBlock Text="الإصدار 1.0.0 • .NET 10 LTS" FontSize="10" Foreground="#64748B" Margin="0,3,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- ================= منطقة المحتوى الرئيسي (Main Content Area) ================= -->
+        <Grid Grid.Column="1" Background="{StaticResource ContentBackgroundBrush}">
+            <Grid.RowDefinitions>
+                <!-- الشريط العلوي (Top Header Bar) -->
+                <RowDefinition Height="64" />
+                <!-- مساحة العرض التفاعلية (Dynamic View Area) -->
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- الشريط العلوي (Header Bar) -->
+            <Border Grid.Row="0" Background="{StaticResource CardBackgroundBrush}" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}" Padding="28,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <!-- معلومات الفرع واسم النظام -->
+                        <ColumnDefinition Width="*" />
+                        <!-- التاريخ والمستخدم -->
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- الجانب الأيمن: اسم الفرع وحالة الاتصال -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Background="#F1F5F9" CornerRadius="6" Padding="10,6" Margin="0,0,14,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
+                                      Fill="{StaticResource PrimaryBlueBrush}" Width="13" Height="13" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding StoreBranch}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#ECFDF5" BorderBrush="#A7F3D0" BorderThickness="1" CornerRadius="6" Padding="8,4">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="7" Height="7" Fill="#10B981" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="قاعدة البيانات: متصلة محلياً" FontSize="11" FontWeight="SemiBold" Foreground="#047857" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- الجانب الأيسر: التاريخ والمستخدم الحالي -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- التاريخ الهجري/الميلادي -->
+                        <StackPanel Margin="0,0,20,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding CurrentDate}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" HorizontalAlignment="Right" />
+                            <TextBlock Text="ساعات العمل: 08:00 ص - 10:00 م" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Right" Margin="0,2,0,0" />
+                        </StackPanel>
+
+                        <!-- أفاتار واسم المستخدم -->
+                        <Border Background="#F1F5F9" CornerRadius="20" Padding="8,4">
+                            <StackPanel Orientation="Horizontal">
+                                <Border Background="{StaticResource PrimaryBlueBrush}" CornerRadius="14" Width="28" Height="28" Margin="0,0,8,0">
+                                    <TextBlock Text="أ" FontWeight="Bold" FontSize="13" Foreground="#FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <TextBlock Text="{Binding CurrentUser}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- مساحة العرض الرئيسية: تتبدل تلقائياً بحسب الـ CurrentViewModel المحدد في نمط MVVM -->
+            <ContentControl Grid.Row="1" Content="{Binding CurrentViewModel}" Focusable="False" />
+        </Grid>
+    </Grid>
+</Window>
