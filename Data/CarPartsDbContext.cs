@@ -599,6 +599,12 @@ namespace CarPartManager.Data
                 entity.Property(s => s.CancellationReason)
                       .HasMaxLength(500);
 
+                // علاقة رأس بأطراف مع بنود الجرد عبر SessionId (العمود والـ ON DELETE CASCADE موجودان في الـDDL)
+                entity.HasMany(s => s.Lines)
+                      .WithOne()
+                      .HasForeignKey(l => l.SessionId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
                 entity.Ignore(s => s.IsDraft);
                 entity.Ignore(s => s.IsCounting);
                 entity.Ignore(s => s.IsReview);
