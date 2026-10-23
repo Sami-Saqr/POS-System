@@ -72,15 +72,18 @@
                     <Grid.ColumnDefinitions>
                         <!-- بيانات الفاتورة والحالة والتاريخ -->
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="16" />
-                        <!-- اسم العميل -->
-                        <ColumnDefinition Width="2*" />
-                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="14" />
+                        <!-- اسم العميل ومقترحات البحث -->
+                        <ColumnDefinition Width="1.6*" />
+                        <ColumnDefinition Width="10" />
                         <!-- هاتف العميل -->
-                        <ColumnDefinition Width="1.2*" />
-                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="1.1*" />
+                        <ColumnDefinition Width="10" />
+                        <!-- عنوان العميل -->
+                        <ColumnDefinition Width="1.1*" />
+                        <ColumnDefinition Width="10" />
                         <!-- طريقة الدفع -->
-                        <ColumnDefinition Width="1.2*" />
+                        <ColumnDefinition Width="1.1*" />
                     </Grid.ColumnDefinitions>
 
                     <!-- بيانات رقم الفاتورة والحالة والتاريخ -->
@@ -100,11 +103,165 @@
 
                     <!-- اسم العميل -->
                     <StackPanel Grid.Column="2">
-                        <TextBlock Text="اسم العميل / الورشة *" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4" />
-                        <TextBox Text="{Binding CustomerName, UpdateSourceTrigger=PropertyChanged}" 
-                                 Style="{StaticResource StandardTextBoxStyle}" 
-                                 IsEnabled="{Binding CanEditInvoice}"
-                                 Height="34" />
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="اسم العميل / الورشة *" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                            <!-- شارة عميل مسجل وزر إلغاء الاختيار -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Visibility="{Binding HasSelectedCustomer, Converter={StaticResource BoolToVisConverter}}" VerticalAlignment="Center">
+                                <Border Background="#ECFDF5" BorderBrush="#A7F3D0" BorderThickness="1" CornerRadius="4" Padding="6,1" Margin="0,0,4,0">
+                                    <TextBlock Text="عميل مسجل ✓" FontSize="10" FontWeight="Bold" Foreground="#047857" VerticalAlignment="Center" />
+                                </Border>
+                                <Button Command="{Binding ClearSelectedCustomerCommand}"
+                                        ToolTip="إلغاء ربط العميل والعودة إلى عميل نقدي"
+                                        Background="Transparent" BorderThickness="0" Padding="2" Cursor="Hand" Height="18" Width="18"
+                                        VerticalAlignment="Center">
+                                    <TextBlock Text="✕" FontSize="10" FontWeight="Bold" Foreground="#EF4444" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid>
+                            <TextBox x:Name="CustomerNameTextBox"
+                                     Text="{Binding CustomerName, UpdateSourceTrigger=PropertyChanged}" 
+                                     Style="{StaticResource StandardTextBoxStyle}" 
+                                     IsEnabled="{Binding CanEditInvoice}"
+                                     Height="34"
+                                     Padding="8,0"
+                                     VerticalContentAlignment="Center"
+                                     PreviewKeyDown="CustomerNameTextBox_PreviewKeyDown" />
+
+                            <!-- قائمة الاقتراحات التفاعلية الحية للعملاء -->
+                            <Popup x:Name="CustomerSuggestionsPopup"
+                                   PlacementTarget="{Binding ElementName=CustomerNameTextBox}"
+                                   Placement="Bottom"
+                                   IsOpen="{Binding IsCustomerPopupOpen, Mode=TwoWay}"
+                                   StaysOpen="False"
+                                   AllowsTransparency="True"
+                                   PopupAnimation="Fade"
+                                   Focusable="False">
+                                <Border Width="{Binding ActualWidth, ElementName=CustomerNameTextBox}"
+                                        MinWidth="380"
+                                        MaxHeight="320"
+                                        Background="#FFFFFF"
+                                        BorderBrush="#CBD5E1"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="4"
+                                        Margin="0,4,0,0"
+                                        FlowDirection="RightToLeft"
+                                        TextElement.FontFamily="{StaticResource AppFontFamily}"
+                                        Focusable="False">
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="#000000" Opacity="0.15" BlurRadius="12" ShadowDepth="4" Direction="270" />
+                                    </Border.Effect>
+                                    <Grid Focusable="False">
+                                        <!-- حالة التحميل -->
+                                        <Border Visibility="{Binding IsLoadingCustomerSuggestions, Converter={StaticResource BoolToVisConverter}}"
+                                                Padding="14,12" HorizontalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="⏳" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                <TextBlock Text="جارٍ البحث عن العملاء المسجلين..." FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- حالة عدم وجود نتائج -->
+                                        <Border Visibility="{Binding ShowNoCustomerSuggestions, Converter={StaticResource BoolToVisConverter}}"
+                                                Padding="14,12" HorizontalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="👤" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                <TextBlock Text="عميل جديد (سيتم إنشاؤه تلقائياً عند الاعتماد)" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- قائمة العملاء المقترحين -->
+                                        <ListBox x:Name="CustomerSuggestionsListBox"
+                                                 ItemsSource="{Binding CustomerSuggestions}"
+                                                 SelectedItem="{Binding SelectedCustomerSuggestion, Mode=TwoWay}"
+                                                 SelectionMode="Single"
+                                                 Focusable="False"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                            <ListBox.ItemContainerStyle>
+                                                <Style TargetType="ListBoxItem">
+                                                    <Setter Property="Padding" Value="8,6" />
+                                                    <Setter Property="Margin" Value="0,1" />
+                                                    <Setter Property="Cursor" Value="Hand" />
+                                                    <Setter Property="Focusable" Value="False" />
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="ListBoxItem">
+                                                                <Border x:Name="ItemBorder"
+                                                                        Background="Transparent"
+                                                                        BorderBrush="Transparent"
+                                                                        BorderThickness="1"
+                                                                        CornerRadius="6"
+                                                                        Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter />
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="ItemBorder" Property="Background" Value="#F1F5F9" />
+                                                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#CBD5E1" />
+                                                                    </Trigger>
+                                                                    <Trigger Property="IsSelected" Value="True">
+                                                                        <Setter TargetName="ItemBorder" Property="Background" Value="#EFF6FF" />
+                                                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#3B82F6" />
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </ListBox.ItemContainerStyle>
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid PreviewMouseLeftButtonUp="CustomerSuggestionItem_PreviewMouseLeftButtonUp">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+
+                                                        <!-- اسم العميل -->
+                                                        <TextBlock Grid.Row="0" Grid.Column="0" 
+                                                                   Text="{Binding Name}" 
+                                                                   FontWeight="Bold" FontSize="12" 
+                                                                   Foreground="{StaticResource TextPrimaryBrush}" />
+
+                                                        <!-- رقم الهاتف -->
+                                                        <TextBlock Grid.Row="1" Grid.Column="0" 
+                                                                   Text="{Binding Phone}" 
+                                                                   FontSize="11" 
+                                                                   Foreground="{StaticResource TextSecondaryBrush}" 
+                                                                   FontFamily="Consolas, Segoe UI" />
+
+                                                        <!-- رصيد الحساب إن وجد -->
+                                                        <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                            <TextBlock Text="{Binding CurrentBalance, StringFormat='{}{0:N2} ج.م'}" 
+                                                                       FontSize="11" FontWeight="Bold" 
+                                                                       Foreground="{Binding BalanceColor}" 
+                                                                       HorizontalAlignment="Right" />
+                                                            <TextBlock Text="{Binding BalanceStatusText}" 
+                                                                       FontSize="9" 
+                                                                       Foreground="{StaticResource TextSecondaryBrush}" 
+                                                                       HorizontalAlignment="Right" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </Grid>
+                                </Border>
+                            </Popup>
+                        </Grid>
                     </StackPanel>
 
                     <!-- هاتف العميل -->
@@ -116,8 +273,17 @@
                                  Height="34" />
                     </StackPanel>
 
-                    <!-- طريقة الدفع -->
+                    <!-- عنوان العميل -->
                     <StackPanel Grid.Column="6">
+                        <TextBlock Text="العنوان (اختياري)" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding CustomerAddress, UpdateSourceTrigger=PropertyChanged}" 
+                                 Style="{StaticResource StandardTextBoxStyle}" 
+                                 IsEnabled="{Binding CanEditInvoice}"
+                                 Height="34" />
+                    </StackPanel>
+
+                    <!-- طريقة الدفع -->
+                    <StackPanel Grid.Column="8">
                         <TextBlock Text="طريقة الدفع *" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4" />
                         <ComboBox ItemsSource="{Binding PaymentMethodsList}" 
                                   SelectedItem="{Binding PaymentMethod}"

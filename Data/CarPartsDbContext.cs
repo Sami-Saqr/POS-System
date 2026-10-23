@@ -265,6 +265,10 @@ namespace CarPartManager.Data
                       .HasMaxLength(50)
                       .IsRequired(false);
 
+                entity.Property(s => s.CustomerAddress)
+                      .HasMaxLength(300)
+                      .IsRequired(false);
+
                 // ربط اختياري بجدول العملاء (nullable — الفواتير القديمة تبقى صالحة)
                 entity.Property(s => s.CustomerId)
                       .IsRequired(false);
@@ -383,6 +387,19 @@ namespace CarPartManager.Data
 
                 entity.Property(p => p.CreatedDate)
                       .IsRequired();
+
+                entity.Property(p => p.IsCancelled)
+                      .HasDefaultValue(false);
+
+                entity.Property(p => p.CancellationDate)
+                      .IsRequired(false);
+
+                entity.Property(p => p.CancellationReason)
+                      .HasMaxLength(500)
+                      .IsRequired(false);
+
+                entity.Ignore(p => p.StatusText);
+                entity.Ignore(p => p.StatusColor);
             });
 
             // 7. تكوين جدول بنود فواتير المبيعات (SalesInvoiceItems)

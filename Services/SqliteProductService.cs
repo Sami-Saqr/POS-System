@@ -98,6 +98,8 @@ namespace CarPartManager.Services
             try
             {
                 using var context = CreateContext();
+                using var transaction = await context.Database.BeginTransactionAsync();
+
                 var existing = await context.Products.FirstOrDefaultAsync(p => p.Id == product.Id);
                 if (existing == null)
                 {
@@ -116,6 +118,10 @@ namespace CarPartManager.Services
                     }
                 }
 
+                // Check if quantity changed
+                int quantityChange = product.Quantity - existing.Quantity;
+                int previousQty = existing.Quantity;
+
                 existing.PartNumber = product.PartNumber?.Trim() ?? string.Empty;
                 existing.Barcode = cleanBarcode;
                 existing.Name = product.Name?.Trim() ?? string.Empty;
@@ -127,7 +133,33 @@ namespace CarPartManager.Services
                 existing.MinimumStock = product.MinimumStock;
                 existing.Notes = product.Notes?.Trim() ?? string.Empty;
 
+                // Record movement if quantity changed
+                if (quantityChange != 0)
+                {
+                    var movement = new InventoryMovementModel
+                    {
+                        ProductId = existing.Id,
+                        PartNumber = existing.PartNumber,
+                        ProductName = existing.Name,
+                        MovementType = "تعديل يدوي (تعديل الصنف)",
+                        QuantityChange = quantityChange,
+                        PreviousQuantity = previousQty,
+                        NewQuantity = existing.Quantity,
+                        MovementDate = DateTime.Now,
+                        Notes = "تعديل مباشر لبيانات الصنف من شاشة الأصناف"
+                    };
+
+                    await context.InventoryMovements.AddAsync(movement);
+                }
+
                 await context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                if (quantityChange != 0)
+                {
+                    DataEvents.RaiseInventoryOrInvoicesChanged();
+                }
+
                 return true;
             }
             catch (Exception ex)

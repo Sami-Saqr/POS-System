@@ -74,5 +74,39 @@ namespace CarPartManager.Models
             get => _createdDate;
             set => SetProperty(ref _createdDate, value);
         }
+
+        private bool _isCancelled;
+        /// <summary>
+        /// هل تم إلغاء الدفعة؟ (السجلات المالية لا تحذف بل تلغى مع توثيق السبب والتاريخ)
+        /// </summary>
+        public bool IsCancelled
+        {
+            get => _isCancelled;
+            set
+            {
+                if (SetProperty(ref _isCancelled, value))
+                {
+                    OnPropertyChanged(nameof(StatusText));
+                    OnPropertyChanged(nameof(StatusColor));
+                }
+            }
+        }
+
+        private DateTime? _cancellationDate;
+        public DateTime? CancellationDate
+        {
+            get => _cancellationDate;
+            set => SetProperty(ref _cancellationDate, value);
+        }
+
+        private string? _cancellationReason;
+        public string? CancellationReason
+        {
+            get => _cancellationReason;
+            set => SetProperty(ref _cancellationReason, value);
+        }
+
+        public string StatusText => IsCancelled ? "ملغاة" : "مسددة";
+        public string StatusColor => IsCancelled ? "#DC2626" : "#059669";
     }
 }

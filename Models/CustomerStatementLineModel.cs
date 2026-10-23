@@ -58,8 +58,21 @@ namespace CarPartManager.Models
         public int SourceId { get; set; }
 
         /// <summary>
-        /// هل هذا السطر دفعة (لتمكين خيار التفاصيل في المستقبل)؟
+        /// هل هذا السطر دفعة (لتمكين خيار التفاصيل أو إلغاء الدفعة)؟
         /// </summary>
-        public bool IsPayment => EntryType == "دفعة استلام";
+        public bool IsPayment => EntryType == "دفعة استلام" || EntryType == "دفعة ملغاة";
+
+        /// <summary>
+        /// تفاصيل فاتورة المبيعات (إجمالي الفاتورة، المدفوع عند البيع، المتبقي)
+        /// </summary>
+        public decimal? InvoiceTotal { get; set; }
+        public decimal? InvoicePaid { get; set; }
+        public decimal? InvoiceRemaining { get; set; }
+
+        /// <summary>
+        /// هل هذه دفعة ملغاة؟
+        /// </summary>
+        public bool IsCancelledPayment { get; set; }
+        public string? CancellationReason { get; set; }
     }
 }

@@ -24,6 +24,10 @@
                 <views:ProductsView />
             </DataTemplate>
 
+            <DataTemplate DataType="{x:Type viewmodels:InventoryViewModel}">
+                <views:InventoryView />
+            </DataTemplate>
+
             <DataTemplate DataType="{x:Type viewmodels:PurchaseInvoicesViewModel}">
                 <views:PurchaseInvoicesView />
             </DataTemplate>
@@ -46,6 +50,10 @@
 
             <DataTemplate DataType="{x:Type viewmodels:ReturnsViewModel}">
                 <views:ReturnsView />
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type viewmodels:CustomersViewModel}">
+                <views:CustomersView />
             </DataTemplate>
 
             <DataTemplate DataType="{x:Type viewmodels:PlaceholderViewModel}">

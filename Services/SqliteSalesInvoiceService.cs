@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using CarPartManager.Data;
 using CarPartManager.Models;
@@ -108,8 +109,10 @@ namespace CarPartManager.Services
                     {
                         InvoiceNumber = invoice.InvoiceNumber.Trim(),
                         InvoiceDate = invoice.InvoiceDate,
+                        CustomerId = invoice.CustomerId,
                         CustomerName = string.IsNullOrWhiteSpace(invoice.CustomerName) ? "عميل نقدي" : invoice.CustomerName.Trim(),
                         CustomerPhone = invoice.CustomerPhone?.Trim() ?? string.Empty,
+                        CustomerAddress = invoice.CustomerAddress?.Trim() ?? string.Empty,
                         Status = "مسودة",
                         SubTotal = invoice.SubTotal,
                         Discount = invoice.Discount,
@@ -150,8 +153,10 @@ namespace CarPartManager.Services
 
                     existing.InvoiceNumber = invoice.InvoiceNumber.Trim();
                     existing.InvoiceDate = invoice.InvoiceDate;
+                    existing.CustomerId = invoice.CustomerId;
                     existing.CustomerName = string.IsNullOrWhiteSpace(invoice.CustomerName) ? "عميل نقدي" : invoice.CustomerName.Trim();
                     existing.CustomerPhone = invoice.CustomerPhone?.Trim() ?? string.Empty;
+                    existing.CustomerAddress = invoice.CustomerAddress?.Trim() ?? string.Empty;
                     existing.SubTotal = invoice.SubTotal;
                     existing.Discount = invoice.Discount;
                     existing.GrandTotal = invoice.GrandTotal;
@@ -238,8 +243,6 @@ namespace CarPartManager.Services
                     {
                         InvoiceNumber = invoice.InvoiceNumber.Trim(),
                         InvoiceDate = invoice.InvoiceDate,
-                        CustomerName = string.IsNullOrWhiteSpace(invoice.CustomerName) ? "عميل نقدي" : invoice.CustomerName.Trim(),
-                        CustomerPhone = invoice.CustomerPhone?.Trim() ?? string.Empty,
                         Status = "معتمدة",
                         PostedDate = DateTime.Now,
                         SubTotal = invoice.SubTotal,
@@ -258,6 +261,8 @@ namespace CarPartManager.Services
                             UnitPrice = i.UnitPrice
                         }).ToList()
                     };
+
+                    await ResolveAndLinkCustomerAsync(context, invoice, targetInvoice);
 
                     await context.SalesInvoices.AddAsync(targetInvoice);
                     await context.SaveChangesAsync();
@@ -278,8 +283,6 @@ namespace CarPartManager.Services
 
                     targetInvoice.InvoiceNumber = invoice.InvoiceNumber.Trim();
                     targetInvoice.InvoiceDate = invoice.InvoiceDate;
-                    targetInvoice.CustomerName = string.IsNullOrWhiteSpace(invoice.CustomerName) ? "عميل نقدي" : invoice.CustomerName.Trim();
-                    targetInvoice.CustomerPhone = invoice.CustomerPhone?.Trim() ?? string.Empty;
                     targetInvoice.Status = "معتمدة";
                     targetInvoice.PostedDate = DateTime.Now;
                     targetInvoice.SubTotal = invoice.SubTotal;
@@ -288,6 +291,8 @@ namespace CarPartManager.Services
                     targetInvoice.PaymentMethod = invoice.PaymentMethod;
                     targetInvoice.PaidAmount = invoice.PaidAmount;
                     targetInvoice.Notes = invoice.Notes?.Trim() ?? string.Empty;
+
+                    await ResolveAndLinkCustomerAsync(context, invoice, targetInvoice);
 
                     // تحديث البنود
                     context.SalesInvoiceItems.RemoveRange(targetInvoice.Items);
@@ -349,9 +354,14 @@ namespace CarPartManager.Services
                 invoice.Status = "معتمدة";
                 invoice.PostedDate = targetInvoice.PostedDate;
                 invoice.Items = targetInvoice.Items;
+                invoice.CustomerId = targetInvoice.CustomerId;
+                invoice.CustomerName = targetInvoice.CustomerName;
+                invoice.CustomerPhone = targetInvoice.CustomerPhone;
+                invoice.CustomerAddress = targetInvoice.CustomerAddress;
 
-                // إشعار لوحة التحكم وباقي الشاشات بالتحديث
+                // إشعار لوحة التحكم وباقي الشاشات وشاشة العملاء بالتحديث
                 DataEvents.RaiseInventoryOrInvoicesChanged();
+                DataEvents.RaiseCustomersChanged();
 
                 return invoice;
             }
@@ -476,6 +486,172 @@ namespace CarPartManager.Services
                 await transaction.RollbackAsync();
                 throw new InvalidOperationException($"فشل إلغاء فاتورة المبيعات: {ex.Message}", ex);
             }
+        }
+
+        /// <summary>
+        /// معالجة وتوحيد وربط بيانات العميل في فاتورة المبيعات ضمن نفس المعاملة المالية الذرية (Single Transaction)
+        /// القواعد:
+        /// 1. اختيار من الاقتراحات -> ربط بالعميل المحدد وتعبئة الحقول الفارغة فقط (دون الكتابة فوق بياناته).
+        /// 2. إدخال رقم هاتف -> توحيد الرقم (PhoneHelper)، البحث عن عميل بنفس الرقم الموحد، إعادة استخدامه إن وجد، أو إنشاء عميل جديد.
+        ///    عند حدوث سباق (DbUpdateException) على الفهرس الفريد: إعادة قراءة العميل واستخدامه فورياً.
+        /// 3. إدخال اسم فقط -> مطابقة بالاسم الموحد (trim, collapse spaces, case-insensitive)، إعادة استخدامه إن وجد أو إنشاؤه.
+        /// 4. ترك الحقول فارغة / عميل نقدي -> بيع مباشر (Walk-in sale) مع CustomerId = null.
+        /// </summary>
+        private static async Task ResolveAndLinkCustomerAsync(CarPartsDbContext context, SalesInvoiceModel inputInvoice, SalesInvoiceModel targetInvoice)
+        {
+            // 1. اختيار صريح لعميل مسجل مسبقاً من المقترحات
+            if (inputInvoice.CustomerId.HasValue && inputInvoice.CustomerId.Value > 0)
+            {
+                var existing = await context.Customers.FirstOrDefaultAsync(c => c.Id == inputInvoice.CustomerId.Value);
+                if (existing != null)
+                {
+                    var normInputPhone = PhoneHelper.Normalize(inputInvoice.CustomerPhone);
+                    if (string.IsNullOrWhiteSpace(existing.Phone) && !string.IsNullOrWhiteSpace(normInputPhone))
+                    {
+                        bool phoneTaken = await context.Customers.AnyAsync(c => c.Id != existing.Id && c.Phone == normInputPhone);
+                        if (!phoneTaken)
+                        {
+                            existing.Phone = normInputPhone;
+                        }
+                    }
+                    if (string.IsNullOrWhiteSpace(existing.Address) && !string.IsNullOrWhiteSpace(inputInvoice.CustomerAddress))
+                    {
+                        existing.Address = inputInvoice.CustomerAddress.Trim();
+                    }
+                    targetInvoice.CustomerId = existing.Id;
+                    targetInvoice.CustomerName = existing.Name;
+                    targetInvoice.CustomerPhone = existing.Phone ?? string.Empty;
+                    targetInvoice.CustomerAddress = existing.Address ?? string.Empty;
+                    return;
+                }
+            }
+
+            // 2. إدخال رقم الهاتف
+            var normalizedPhone = PhoneHelper.Normalize(inputInvoice.CustomerPhone);
+            if (!string.IsNullOrWhiteSpace(normalizedPhone))
+            {
+                var existingByPhone = await context.Customers.FirstOrDefaultAsync(c => c.Phone == normalizedPhone);
+                if (existingByPhone == null)
+                {
+                    var candidates = await context.Customers.Where(c => c.Phone != null && c.Phone != "").ToListAsync();
+                    existingByPhone = candidates.FirstOrDefault(c => PhoneHelper.Normalize(c.Phone) == normalizedPhone);
+                }
+
+                if (existingByPhone != null)
+                {
+                    if (existingByPhone.Phone != normalizedPhone)
+                    {
+                        existingByPhone.Phone = normalizedPhone;
+                    }
+                    if ((string.IsNullOrWhiteSpace(existingByPhone.Name) || existingByPhone.Name == "عميل نقدي")
+                        && !string.IsNullOrWhiteSpace(inputInvoice.CustomerName)
+                        && inputInvoice.CustomerName.Trim() != "عميل نقدي")
+                    {
+                        existingByPhone.Name = inputInvoice.CustomerName.Trim();
+                    }
+                    // إعادة الاستخدام دون مساس بالبيانات الموجودة إلا ملء الحقول الفارغة
+                    if (string.IsNullOrWhiteSpace(existingByPhone.Address) && !string.IsNullOrWhiteSpace(inputInvoice.CustomerAddress))
+                    {
+                        existingByPhone.Address = inputInvoice.CustomerAddress.Trim();
+                    }
+                    targetInvoice.CustomerId = existingByPhone.Id;
+                    targetInvoice.CustomerName = existingByPhone.Name;
+                    targetInvoice.CustomerPhone = existingByPhone.Phone ?? string.Empty;
+                    targetInvoice.CustomerAddress = existingByPhone.Address ?? string.Empty;
+                    return;
+                }
+
+                // إنشاء عميل جديد بالهاتف الموحد
+                var rawName = inputInvoice.CustomerName?.Trim();
+                var newName = string.IsNullOrWhiteSpace(rawName) || rawName == "عميل نقدي" ? "عميل نقدي" : rawName;
+                var newCustomer = new CustomerModel
+                {
+                    Name = newName,
+                    Phone = normalizedPhone,
+                    Address = inputInvoice.CustomerAddress?.Trim() ?? string.Empty,
+                    CreatedDate = DateTime.Now,
+                    IsActive = true
+                };
+
+                try
+                {
+                    await context.Customers.AddAsync(newCustomer);
+                    await context.SaveChangesAsync();
+                    targetInvoice.CustomerId = newCustomer.Id;
+                    targetInvoice.CustomerName = newCustomer.Name;
+                    targetInvoice.CustomerPhone = newCustomer.Phone;
+                    targetInvoice.CustomerAddress = newCustomer.Address;
+                }
+                catch (DbUpdateException)
+                {
+                    // في حال تكرار الفهرس الفريد عند حدوث سباق بيانات، نعيد قراءة العميل ونربطه
+                    context.Entry(newCustomer).State = EntityState.Detached;
+                    var raceCustomer = await context.Customers.FirstOrDefaultAsync(c => c.Phone == normalizedPhone);
+                    if (raceCustomer != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(raceCustomer.Address) && !string.IsNullOrWhiteSpace(inputInvoice.CustomerAddress))
+                        {
+                            raceCustomer.Address = inputInvoice.CustomerAddress.Trim();
+                        }
+                        targetInvoice.CustomerId = raceCustomer.Id;
+                        targetInvoice.CustomerName = raceCustomer.Name;
+                        targetInvoice.CustomerPhone = raceCustomer.Phone ?? string.Empty;
+                        targetInvoice.CustomerAddress = raceCustomer.Address ?? string.Empty;
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+                return;
+            }
+
+            // 3. إدخال اسم العميل فقط دون هاتف
+            var nameInput = inputInvoice.CustomerName?.Trim();
+            if (!string.IsNullOrWhiteSpace(nameInput) && nameInput != "عميل نقدي")
+            {
+                var normName = Regex.Replace(nameInput, @"\s+", " ").ToLowerInvariant();
+                var allCustomers = await context.Customers.ToListAsync();
+                var existingByName = allCustomers.FirstOrDefault(c =>
+                    Regex.Replace(c.Name.Trim(), @"\s+", " ").ToLowerInvariant() == normName);
+
+                if (existingByName != null)
+                {
+                    if (string.IsNullOrWhiteSpace(existingByName.Address) && !string.IsNullOrWhiteSpace(inputInvoice.CustomerAddress))
+                    {
+                        existingByName.Address = inputInvoice.CustomerAddress.Trim();
+                    }
+                    targetInvoice.CustomerId = existingByName.Id;
+                    targetInvoice.CustomerName = existingByName.Name;
+                    targetInvoice.CustomerPhone = existingByName.Phone ?? string.Empty;
+                    targetInvoice.CustomerAddress = existingByName.Address ?? string.Empty;
+                    return;
+                }
+
+                // إنشاء عميل جديد بالاسم
+                var newCustomer = new CustomerModel
+                {
+                    Name = Regex.Replace(nameInput, @"\s+", " "),
+                    Phone = string.Empty,
+                    Address = inputInvoice.CustomerAddress?.Trim() ?? string.Empty,
+                    CreatedDate = DateTime.Now,
+                    IsActive = true
+                };
+
+                await context.Customers.AddAsync(newCustomer);
+                await context.SaveChangesAsync();
+                targetInvoice.CustomerId = newCustomer.Id;
+                targetInvoice.CustomerName = newCustomer.Name;
+                targetInvoice.CustomerPhone = string.Empty;
+                targetInvoice.CustomerAddress = newCustomer.Address;
+                return;
+            }
+
+            // 4. بيع نقدي مباشر (Walk-in sale)
+            targetInvoice.CustomerId = null;
+            targetInvoice.CustomerName = "عميل نقدي";
+            targetInvoice.CustomerPhone = string.Empty;
+            targetInvoice.CustomerAddress = string.Empty;
         }
     }
 }

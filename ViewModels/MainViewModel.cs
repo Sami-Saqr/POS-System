@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CarPartManager.Models;
 using CarPartManager.MVVM;
+using CarPartManager.Views;
 
 namespace CarPartManager.ViewModels
 {
@@ -51,24 +52,28 @@ namespace CarPartManager.ViewModels
         // التخزين المؤقت للـ ViewModels لتجنب إعادة بنائها
         private readonly DashboardViewModel _dashboardViewModel;
         private readonly ProductsViewModel _productsViewModel;
+        private readonly InventoryViewModel _inventoryViewModel;
         private readonly PurchaseInvoicesViewModel _purchaseInvoicesViewModel;
         private readonly PurchaseInvoicesHistoryViewModel _purchaseInvoicesHistoryViewModel;
         private readonly SalesInvoicesViewModel _salesInvoicesViewModel;
         private readonly SalesInvoicesHistoryViewModel _salesInvoicesHistoryViewModel;
         private readonly SuppliersViewModel _suppliersViewModel;
         private readonly ReturnsViewModel _returnsViewModel;
+        private readonly CustomersViewModel _customersViewModel;
         private readonly Dictionary<string, PlaceholderViewModel> _placeholderCache = new();
 
         public MainViewModel()
         {
             _dashboardViewModel = new DashboardViewModel();
             _productsViewModel = new ProductsViewModel();
+            _inventoryViewModel = new InventoryViewModel();
             _purchaseInvoicesViewModel = new PurchaseInvoicesViewModel();
             _purchaseInvoicesHistoryViewModel = new PurchaseInvoicesHistoryViewModel();
             _salesInvoicesViewModel = new SalesInvoicesViewModel();
             _salesInvoicesHistoryViewModel = new SalesInvoicesHistoryViewModel();
             _suppliersViewModel = new SuppliersViewModel();
             _returnsViewModel = new ReturnsViewModel();
+            _customersViewModel = new CustomersViewModel();
             _currentViewModel = _dashboardViewModel;
 
             NavigationItems = new ObservableCollection<NavItem>
@@ -127,6 +132,13 @@ namespace CarPartManager.ViewModels
                 return;
             }
 
+            if (selectedItem.Tag == "Inventory")
+            {
+                _ = _inventoryViewModel.LoadAllDataAsync();
+                CurrentViewModel = _inventoryViewModel;
+                return;
+            }
+
             if (selectedItem.Tag == "PurchaseInvoices")
             {
                 _ = _purchaseInvoicesViewModel.LoadAllDataAsync();
@@ -169,11 +181,17 @@ namespace CarPartManager.ViewModels
                 return;
             }
 
+            if (selectedItem.Tag == "Customers")
+            {
+                _ = _customersViewModel.LoadCustomersAsync();
+                CurrentViewModel = _customersViewModel;
+                return;
+            }
+
             if (!_placeholderCache.TryGetValue(selectedItem.Tag, out var placeholder))
             {
                 var desc = selectedItem.Tag switch
                 {
-                    "Inventory" => "شاشة إدارة المستودع والمخزون: مراقبة الأرصدة الحالية، تتبع حركات الإدخال والإخراج، والتسوية الجردية والباركود.",
                     "POS" => "شاشة نقطة البيع السريعة (الكاشير): إصدار فواتير بيع فورية مع مسح الباركود، دعم طرق الدفع المتعددة والطباعة المباشرة.",
                     "SalesInvoices" => "سجل فواتير المبيعات: أرشيف الفواتير الصادرة، إدارة المرتجعات، وتفاصيل الضرائب وبيانات الزبائن.",
                     "PurchaseInvoices" => "سجل فواتير المشتريات: تتبع فواتير الوكلاء وموردي قطع الغيار، ومطابقة الكميات المستلمة في المستودع.",

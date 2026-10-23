@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using CarPartManager.Models;
+using CarPartManager.Services;
 
 namespace CarPartManager.Data
 {
@@ -9,6 +10,9 @@ namespace CarPartManager.Data
     /// </summary>
     public static class DbInitializer
     {
+        public static List<string> DuplicatePhonesReport { get; } = new();
+        public static bool IsUniquePhoneIndexApplied { get; private set; }
+
         public static async Task InitializeAsync(CarPartsDbContext context)
         {
             // 1. إنشاء قاعدة البيانات إن لم تكن موجودة
@@ -254,15 +258,88 @@ namespace CarPartManager.Data
                     ""PaymentMethod"" TEXT NOT NULL DEFAULT 'نقدي',
                     ""Notes"" TEXT NULL,
                     ""CreatedDate"" TEXT NOT NULL DEFAULT (datetime('now')),
+                    ""IsCancelled"" INTEGER NOT NULL DEFAULT 0,
+                    ""CancellationDate"" TEXT NULL,
+                    ""CancellationReason"" TEXT NULL,
                     CONSTRAINT ""FK_CustomerPayments_Customers_CustomerId""
                         FOREIGN KEY (""CustomerId"") REFERENCES ""Customers"" (""Id"") ON DELETE RESTRICT
                 );
                 CREATE INDEX IF NOT EXISTS ""IX_CustomerPayments_CustomerId"" ON ""CustomerPayments"" (""CustomerId"");
             ");
 
-            // إضافة عمود CustomerId إلى SalesInvoices بأمان (nullable لعدم المساس بالفواتير القديمة)
+            // ترقية جدول CustomerPayments للأعمدة الإضافية
+            try { await context.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""CustomerPayments"" ADD COLUMN ""IsCancelled"" INTEGER NOT NULL DEFAULT 0;"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""CustomerPayments"" ADD COLUMN ""CancellationDate"" TEXT NULL;"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""CustomerPayments"" ADD COLUMN ""CancellationReason"" TEXT NULL;"); } catch { }
+
+            // إضافة عمود CustomerId و CustomerAddress إلى SalesInvoices بأمان (nullable لعدم المساس بالفواتير القديمة)
             try { await context.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""SalesInvoices"" ADD COLUMN ""CustomerId"" INTEGER NULL;"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""SalesInvoices"" ADD COLUMN ""CustomerAddress"" TEXT NULL;"); } catch { }
             try { await context.Database.ExecuteSqlRawAsync(@"CREATE INDEX IF NOT EXISTS ""IX_SalesInvoices_CustomerId"" ON ""SalesInvoices"" (""CustomerId"") WHERE ""CustomerId"" IS NOT NULL;"); } catch { }
+
+            // ── ترحيل الفهرس الفريد لهواتف العملاء بعد فحص التكرارات (UniqueCustomerPhoneMigration) ───
+            await MigrateCustomerPhoneIndexAsync(context);
+
+            // ── ترحيل حركات المخزون الافتتاحية (OpeningStockMovementsMigration) ───
+            await BackfillOpeningStockMovementsAsync(context);
+        }
+
+        private static async Task MigrateCustomerPhoneIndexAsync(CarPartsDbContext context)
+        {
+            try
+            {
+                var customersWithPhone = await context.Customers
+                    .AsNoTracking()
+                    .Where(c => c.Phone != null && c.Phone != "")
+                    .Select(c => new { c.Id, c.Name, c.Phone })
+                    .ToListAsync();
+
+                var grouped = customersWithPhone
+                    .Select(c => new { c.Id, c.Name, RawPhone = c.Phone, Normalized = PhoneHelper.Normalize(c.Phone) })
+                    .Where(x => !string.IsNullOrEmpty(x.Normalized))
+                    .GroupBy(x => x.Normalized)
+                    .Where(g => g.Count() > 1)
+                    .ToList();
+
+                if (grouped.Any())
+                {
+                    DuplicatePhonesReport.Clear();
+                    foreach (var g in grouped)
+                    {
+                        var details = string.Join("، ", g.Select(x => $"[ID: {x.Id}, الاسم: {x.Name}, الأصل: {x.RawPhone}]"));
+                        DuplicatePhonesReport.Add($"الهاتف الموحد ({g.Key}) مكرر في: {details}");
+                    }
+                    // في حال وجود تكرار: لا نحذف ولا ندمج، ونستخدم فهرساً غير فريد
+                    await context.Database.ExecuteSqlRawAsync(@"CREATE INDEX IF NOT EXISTS ""IX_Customers_Phone"" ON ""Customers"" (""Phone"");");
+                    IsUniquePhoneIndexApplied = false;
+                }
+                else
+                {
+                    // لا توجد تكرارات: تحديث الأرقام غير الموحدة إلى شكلها الموحد
+                    foreach (var c in customersWithPhone)
+                    {
+                        var norm = PhoneHelper.Normalize(c.Phone);
+                        if (!string.IsNullOrEmpty(norm) && norm != c.Phone)
+                        {
+                            await context.Database.ExecuteSqlRawAsync(
+                                @"UPDATE ""Customers"" SET ""Phone"" = {0} WHERE ""Id"" = {1}", norm, c.Id);
+                        }
+                    }
+
+                    // تطبيق الفهرس الفريد المشروط على الأرقام غير الفارغة
+                    await context.Database.ExecuteSqlRawAsync(@"
+                        CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Customers_Phone_Unique"" 
+                        ON ""Customers"" (""Phone"") 
+                        WHERE ""Phone"" IS NOT NULL AND ""Phone"" != '';
+                    ");
+                    IsUniquePhoneIndexApplied = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MigrateCustomerPhoneIndex] {ex.Message}");
+                try { await context.Database.ExecuteSqlRawAsync(@"CREATE INDEX IF NOT EXISTS ""IX_Customers_Phone"" ON ""Customers"" (""Phone"");"); } catch { }
+            }
         }
 
         private static async Task SeedInitialProductsAsync(CarPartsDbContext context)
@@ -414,6 +491,53 @@ namespace CarPartManager.Data
 
             await context.Suppliers.AddRangeAsync(initialSuppliers);
             await context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// ترحيل حركات المخزون الافتتاحية (Backfill Opening Stock Movements)
+        /// ينشئ حركة "رصيد افتتاحي" لكل صنف ليس له حركة افتتاحية مسجلة مسبقاً
+        /// هذه العملية ثابتة (idempotent) - يمكن تشغيلها عدة مرات دون تكرار
+        /// </summary>
+        private static async Task BackfillOpeningStockMovementsAsync(CarPartsDbContext context)
+        {
+            try
+            {
+                // Get all products
+                var products = await context.Products.AsNoTracking().ToListAsync();
+
+                foreach (var product in products)
+                {
+                    // Check if this product already has an opening movement
+                    bool hasOpeningMovement = await context.InventoryMovements
+                        .AsNoTracking()
+                        .AnyAsync(m => m.ProductId == product.Id && m.MovementType == "رصيد افتتاحي");
+
+                    if (!hasOpeningMovement && product.Quantity > 0)
+                    {
+                        // Create opening movement for current quantity
+                        var openingMovement = new InventoryMovementModel
+                        {
+                            ProductId = product.Id,
+                            PartNumber = product.PartNumber,
+                            ProductName = product.Name,
+                            MovementType = "رصيد افتتاحي",
+                            QuantityChange = product.Quantity,
+                            PreviousQuantity = 0,
+                            NewQuantity = product.Quantity,
+                            MovementDate = DateTime.Now,
+                            Notes = "رصيد افتتاحي تم ترحيله من المخزون الحالي"
+                        };
+
+                        await context.InventoryMovements.AddAsync(openingMovement);
+                    }
+                }
+
+                await context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[BackfillOpeningStockMovements] {ex.Message}");
+            }
         }
     }
 }

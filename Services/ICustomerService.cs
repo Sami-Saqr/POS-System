@@ -37,7 +37,16 @@ namespace CarPartManager.Services
         Task<IEnumerable<CustomerPaymentModel>> GetPaymentsAsync(int customerId);
         Task<CustomerPaymentModel> AddPaymentAsync(CustomerPaymentModel payment);
 
+        /// <summary>
+        /// إلغاء دفعة مسجلة بالخطأ مع توثيق السبب والتاريخ دون حذف السجل المالي
+        /// </summary>
+        Task<bool> CancelPaymentAsync(int paymentId, string reason);
+
         // ── التحقق من الهاتف ───────────────────────────────────────────────────
         Task<bool> PhoneExistsAsync(string phone, int excludeCustomerId = 0);
+        Task<CustomerModel?> FindCustomerByPhoneAsync(string phone, int excludeCustomerId = 0);
+
+        // ── اقتراحات سريعة لنقطة البيع (POS) ──────────────────────────────────
+        Task<IEnumerable<CustomerModel>> GetCustomerSuggestionsAsync(string query, CancellationToken cancellationToken = default);
     }
 }

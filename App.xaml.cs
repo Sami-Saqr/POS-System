@@ -1522,6 +1522,421 @@ namespace CarPartManager
                 cleanupDb.SaveChanges();
             }
 
+            // ==================================================
+            // اختبارات وحدة إدارة العملاء، حساب الرصيد، والدفعات
+            // ==================================================
+            Console.WriteLine("--------------------------------------------------");
+            Console.WriteLine("بدء اختبارات وحدة العملاء (الرصيد، الفواتير، الدفعات، كشف الحساب)");
+            Console.WriteLine("--------------------------------------------------");
+
+            var customerService = new SqliteCustomerService();
+            var testPhone = "0109988" + Random.Shared.Next(1000, 9999);
+
+            // 1. إضافة عميل مع رصيد افتتاحي
+            var newCust = new CustomerModel
+            {
+                Name = "عميل تجريبي للاختبار الآلي",
+                Phone = testPhone,
+                Address = "القاهرة - مصر",
+                Notes = "سجل اختبار لاحتساب الرصيد",
+                OpeningBalance = 500.00m,
+                IsActive = true
+            };
+            var addedCust = customerService.AddCustomerAsync(newCust).GetAwaiter().GetResult();
+            Assert(addedCust.Id > 0, $"إضافة عميل جديد بنجاح في SQLite (ID = {addedCust.Id})");
+
+            // 2. التحقق من الرصيد الأولي المطابق للرصيد الافتتاحي
+            var initialBal = customerService.CalculateBalanceAsync(addedCust.Id).GetAwaiter().GetResult();
+            Assert(initialBal == 500.00m, $"الرصيد الأولي للعميل يطابق الرصيد الافتتاحي بدقة (500.00 ج.م)");
+
+            // 3. البحث بالاسم ورقم الهاتف
+            var searchByName = customerService.SearchCustomersAsync("تجريبي للاختبار").GetAwaiter().GetResult().ToList();
+            Assert(searchByName.Any(c => c.Id == addedCust.Id), "البحث عن العميل بالاسم يرجع النتيجة الصحيحة");
+
+            var searchByPhone = customerService.SearchCustomersAsync(testPhone).GetAwaiter().GetResult().ToList();
+            Assert(searchByPhone.Any(c => c.Id == addedCust.Id), "البحث عن العميل برقم الهاتف يرجع النتيجة الصحيحة");
+
+            // 4. التحقق من فحص تكرار الهاتف
+            var phoneDuplicate = customerService.PhoneExistsAsync(testPhone, excludeCustomerId: 0).GetAwaiter().GetResult();
+            Assert(phoneDuplicate, "فحص تكرار رقم الهاتف يرصد الهاتف المسجل مسبقاً بنجاح");
+
+            var phoneSelfExcluded = customerService.PhoneExistsAsync(testPhone, excludeCustomerId: addedCust.Id).GetAwaiter().GetResult();
+            Assert(!phoneSelfExcluded, "استثناء معرف العميل الحالي عند فحص تكرار هاتفه لتسهيل التعديل");
+
+            // 5. تعديل بيانات العميل
+            addedCust.Address = "الجيزة - شارع الهرم";
+            var updatedCust = customerService.UpdateCustomerAsync(addedCust).GetAwaiter().GetResult();
+            Assert(updatedCust, "تعديل عنوان العميل في SQLite بنجاح");
+
+            // 6. تعطيل وتفعيل العميل بدلاً من الحذف
+            var deactivated = customerService.SetActiveStatusAsync(addedCust.Id, false).GetAwaiter().GetResult();
+            var deactivatedCust = customerService.GetByIdAsync(addedCust.Id).GetAwaiter().GetResult();
+            Assert(deactivated && deactivatedCust != null && !deactivatedCust.IsActive, "تعطيل العميل بدلاً من الحذف بنجاح");
+
+            var reactivated = customerService.SetActiveStatusAsync(addedCust.Id, true).GetAwaiter().GetResult();
+            var reactivatedCust = customerService.GetByIdAsync(addedCust.Id).GetAwaiter().GetResult();
+            Assert(reactivated && reactivatedCust != null && reactivatedCust.IsActive, "إعادة تفعيل العميل بنجاح");
+
+            // 7. ربط فاتورة بيع بالعميل والتحقق من حساب الرصيد
+            // فاتورة: إجمالي 1200 ج.م، مدفوع منها 200 ج.م -> المتبقي 1000 ج.م
+            // الرصيد المتوقع = 500 (افتتاحي) + 1000 (متبقي من الفاتورة) = 1500 ج.م
+            int testInvoiceId = 0;
+            using (var dbInv = new CarPartsDbContext())
+            {
+                var invEntity = new SalesInvoiceModel
+                {
+                    InvoiceNumber = "INV-CUST-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
+                    InvoiceDate = DateTime.Now,
+                    CustomerId = addedCust.Id,
+                    CustomerName = addedCust.Name,
+                    CustomerPhone = addedCust.Phone,
+                    Status = "معتمدة",
+                    SubTotal = 1200.00m,
+                    Discount = 0m,
+                    GrandTotal = 1200.00m,
+                    PaidAmount = 200.00m,
+                    PaymentMethod = "آجل",
+                    Notes = "فاتورة بيع لاختبار رصيد العميل"
+                };
+                dbInv.SalesInvoices.Add(invEntity);
+                dbInv.SaveChanges();
+                testInvoiceId = invEntity.Id;
+            }
+
+            var balanceWithInvoice = customerService.CalculateBalanceAsync(addedCust.Id).GetAwaiter().GetResult();
+            Assert(balanceWithInvoice == 1500.00m,
+                $"حساب رصيد العميل بعد الفاتورة بدقة: 500 (افتتاحي) + 1000 (متبقي غير مدفوع) = 1500.00 ج.م (الفعلي: {balanceWithInvoice:N2})");
+
+            // 8. تسجيل دفعة نقدية وتخفيض الرصيد
+            // دفعة 600 ج.م -> الرصيد المتوقع = 1500 - 600 = 900 ج.م
+            var payment1 = new CustomerPaymentModel
+            {
+                CustomerId = addedCust.Id,
+                Amount = 600.00m,
+                PaymentDate = DateTime.Now,
+                PaymentMethod = "نقدي",
+                Notes = "سداد دفعة أولى"
+            };
+            var savedPay1 = customerService.AddPaymentAsync(payment1).GetAwaiter().GetResult();
+            Assert(savedPay1.Id > 0, $"تسجيل دفعة نقدية بنجاح في SQLite (ID = {savedPay1.Id})");
+
+            var balanceAfterPayment1 = customerService.CalculateBalanceAsync(addedCust.Id).GetAwaiter().GetResult();
+            Assert(balanceAfterPayment1 == 900.00m,
+                $"تخفيض رصيد العميل بالدفعة المسجلة: 1500 - 600 = 900.00 ج.م (الفعلي: {balanceAfterPayment1:N2})");
+
+            // 9. تسجيل دفعة ثانية ثم إلغاؤها (قاعدة عدم الحذف المالي والتصحيح بالإلغاء)
+            var payment2 = new CustomerPaymentModel
+            {
+                CustomerId = addedCust.Id,
+                Amount = 400.00m,
+                PaymentDate = DateTime.Now,
+                PaymentMethod = "تحويل بنكي",
+                Notes = "دفعة مسجلة بالخطأ لاختبار الإلغاء"
+            };
+            var savedPay2 = customerService.AddPaymentAsync(payment2).GetAwaiter().GetResult();
+            var balanceAfterPay2 = customerService.CalculateBalanceAsync(addedCust.Id).GetAwaiter().GetResult();
+            Assert(balanceAfterPay2 == 500.00m, $"تخفيض الرصيد مؤقتاً بالدفعة الثانية: 900 - 400 = 500.00 ج.م");
+
+            // إلغاء الدفعة الثانية مع سبب
+            var cancelPaymentSuccess = customerService.CancelPaymentAsync(savedPay2.Id, "تسجيل بالخطأ من الكاشير").GetAwaiter().GetResult();
+            Assert(cancelPaymentSuccess, "إلغاء الدفعة المسجلة بالخطأ دون حذف سجلها المالي");
+
+            // التحقق من أن السجل المالي لا يزال موجوداً وحالته ملغاة
+            using (var dbCheck = new CarPartsDbContext())
+            {
+                var payInDb = dbCheck.CustomerPayments.FirstOrDefault(p => p.Id == savedPay2.Id);
+                Assert(payInDb != null && payInDb.IsCancelled && payInDb.CancellationReason == "تسجيل بالخطأ من الكاشير",
+                    "بقاء السجل المالي في قاعدة البيانات مع توثيق حالة الإلغاء وتاريخها وسببها");
+            }
+
+            // التحقق من عودة الرصيد إلى 900 ج.م
+            var balanceAfterCancel = customerService.CalculateBalanceAsync(addedCust.Id).GetAwaiter().GetResult();
+            Assert(balanceAfterCancel == 900.00m,
+                $"عودة الرصيد بدقة بعد إلغاء الدفعة الخاطئة إلى 900.00 ج.م (الفعلي: {balanceAfterCancel:N2})");
+
+            // 10. التحقق من كشف الحساب والسطور المحسوبة
+            var statement = customerService.GetStatementAsync(addedCust.Id).GetAwaiter().GetResult().ToList();
+            Assert(statement.Count >= 4, $"توليد كشف الحساب المتكامل بنجاح ({statement.Count} أسطر)");
+
+            var openLine = statement.FirstOrDefault(l => l.EntryType == "رصيد افتتاحي");
+            Assert(openLine != null && openLine.DebitAmount == 500.00m, "توثيق سطر الرصيد الافتتاحي في كشف الحساب بمبلغ 500.00 ج.م");
+
+            var invLine = statement.FirstOrDefault(l => l.EntryType == "فاتورة بيع");
+            Assert(invLine != null && invLine.InvoiceTotal == 1200.00m && invLine.InvoicePaid == 200.00m && invLine.DebitAmount == 1000.00m,
+                "توثيق تفاصيل فاتورة المبيعات (الإجمالي 1200، المدفوع 200، المتبقي 1000) في كشف الحساب");
+
+            var validPayLine = statement.FirstOrDefault(l => l.EntryType == "دفعة استلام");
+            Assert(validPayLine != null && validPayLine.CreditAmount == 600.00m, "توثيق الدفعة المستلمة بدائن 600.00 ج.م");
+
+            var cancelledPayLine = statement.FirstOrDefault(l => l.EntryType == "دفعة ملغاة");
+            Assert(cancelledPayLine != null && cancelledPayLine.IsCancelledPayment && cancelledPayLine.CreditAmount == 0,
+                "إظهار الدفعة الملغاة في كشف الحساب كدفعة ملغاة دون التأثير على الرصيد التراكمي");
+
+            var finalLine = statement.Last();
+            Assert(finalLine.RunningBalance == 900.00m, $"الرصيد التراكمي الختامي لكشف الحساب يطابق رصيد العميل تماماً: {finalLine.RunningBalance:N2} ج.م");
+
+            // تنظيف بيانات الاختبار الخاصة بالعميل
+            using (var cleanupDb = new CarPartsDbContext())
+            {
+                var paymentsToDelete = cleanupDb.CustomerPayments.Where(p => p.CustomerId == addedCust.Id).ToList();
+                cleanupDb.CustomerPayments.RemoveRange(paymentsToDelete);
+
+                if (testInvoiceId > 0)
+                {
+                    var invToDelete = cleanupDb.SalesInvoices.Find(testInvoiceId);
+                    if (invToDelete != null) cleanupDb.SalesInvoices.Remove(invToDelete);
+                }
+
+                var custToDelete = cleanupDb.Customers.Find(addedCust.Id);
+                if (custToDelete != null) cleanupDb.Customers.Remove(custToDelete);
+
+                cleanupDb.SaveChanges();
+            }
+
+            // --------------------------------------------------
+            // اختبارات تفاعلية نموذج العملاء والتحقق اللحظي والأرقام المشرقية وتوحيد الهاتف
+            // --------------------------------------------------
+            Console.WriteLine("--------------------------------------------------");
+            Console.WriteLine("بدء اختبارات تفاعلية نموذج العملاء والتحقق اللحظي وتوحيد الهاتف");
+            Console.WriteLine("--------------------------------------------------");
+
+            var customersVm = new CustomersViewModel(customerService);
+
+            // 1. فحص CanSaveCustomer وأمر الحفظ
+            Assert(!customersVm.CanSaveCustomer, "زر الحفظ معطل مبدئياً عند فراغ اسم العميل (CanSaveCustomer = false)");
+            Assert(!customersVm.SaveCustomerCommand.CanExecute(null), "SaveCustomerCommand.CanExecute يرجع false عند فراغ الاسم");
+
+            // كتابة الاسم يفعل الزر فوراً
+            customersVm.FormName = "شركة النور لقطع الغيار";
+            Assert(customersVm.CanSaveCustomer, "زر الحفظ يتفعل فورياً بمجرد كتابة الاسم");
+            Assert(customersVm.SaveCustomerCommand.CanExecute(null), "SaveCustomerCommand.CanExecute يرجع true عند وجود الاسم");
+
+            // مسح الاسم يعطل الزر فوراً
+            customersVm.FormName = "   ";
+            Assert(!customersVm.CanSaveCustomer, "مسح الاسم يعطل زر الحفظ فورياً");
+
+            // 2. اختبار الحقول الاختيارية وعدم تعطيل الحفظ عند فراغها
+            customersVm.FormName = "عميل تجريبي للاختبار";
+            customersVm.FormPhone = "";
+            customersVm.FormAddress = "";
+            customersVm.FormNotes = "";
+            customersVm.FormOpeningBalanceText = ""; // فارغ تماماً لا يمنع الحفظ
+
+            customersVm.SaveCustomerCommand.Execute(null);
+            Thread.Sleep(300); // إتاحة مهلة للعملية غير المتزامنة
+            Assert(customersVm.HasStatusMessage && !customersVm.IsStatusError,
+                "الحفظ ينجح تماماً عند ترك الرصيد الافتتاحي والهاتف فارغين (حقول اختيارية)");
+            Assert(customersVm.StatusMessage.Contains("تم حفظ بيانات العميل"), "ظهور رسالة النجاح العربية بوضوح وثباتها");
+
+            var savedCust = customerService.GetAllCustomersAsync().GetAwaiter().GetResult()
+                .FirstOrDefault(c => c.Name == "عميل تجريبي للاختبار");
+            Assert(savedCust != null && savedCust.OpeningBalance == 0m, "حفظ العميل في SQLite برصيد افتتاحي 0 عند تركه فارغاً");
+
+            // 3. اختبار الأرقام العربية المشرقية والفاصلة العشرية في الرصيد الافتتاحي
+            customersVm.FormName = "عميل أرقام مشرقية";
+            customersVm.FormOpeningBalanceText = "١٥٠٠٫٥٠"; // أرقام مشرقية مع فاصلة عربية
+            customersVm.SaveCustomerCommand.Execute(null);
+            Thread.Sleep(300);
+
+            var easternCust = customerService.GetAllCustomersAsync().GetAwaiter().GetResult()
+                .FirstOrDefault(c => c.Name == "عميل أرقام مشرقية");
+            Assert(easternCust != null && easternCust.OpeningBalance == 1500.50m,
+                "التحويل الناجح للأرقام المشرقية والفاصلة العربية في الرصيد الافتتاحي إلى 1500.50 ج.م");
+
+            // 4. اختبار الرصيد الافتتاحي غير الصالح
+            customersVm.FormName = "عميل خطأ رصيد";
+            customersVm.FormOpeningBalanceText = "-50";
+            customersVm.SaveCustomerCommand.Execute(null);
+            Assert(customersVm.IsStatusError && customersVm.StatusMessage.Contains("الرصيد الافتتاحي"),
+                "إظهار رسالة خطأ عربية واضحة ومنع الحفظ عند إدخال رصيد سالب دون تعطيل الزر");
+
+            // 5. اختبار توحيد رقم الهاتف ومنع التكرار مع ذكر اسم العميل
+            customersVm.FormName = "محمد أحمد";
+            customersVm.FormPhone = "01012345678";
+            customersVm.FormOpeningBalanceText = "0";
+            customersVm.SaveCustomerCommand.Execute(null);
+            Thread.Sleep(300);
+
+            // محاولة إضافة عميل ثانٍ بنفس الهاتف بصيغة دولية ومسافات
+            customersVm.FormName = "علي محمود";
+            customersVm.FormPhone = "+20 10 1234 5678";
+            customersVm.SaveCustomerCommand.Execute(null);
+            Thread.Sleep(200);
+
+            Assert(customersVm.IsStatusError && customersVm.StatusMessage.Contains("محمد أحمد"),
+                "منع تكرار رقم الهاتف الموحد وإظهار رسالة عربية تذكر اسم العميل الحالي 'محمد أحمد'");
+
+            // تنظيف بيانات الاختبار الخاصة بنموذج العملاء
+            using (var cleanupDb = new CarPartsDbContext())
+            {
+                var custsToDelete = cleanupDb.Customers
+                    .Where(c => c.Name == "عميل تجريبي للاختبار" || c.Name == "عميل أرقام مشرقية" || c.Name == "محمد أحمد" || c.Name == "علي محمود")
+                    .ToList();
+                cleanupDb.Customers.RemoveRange(custsToDelete);
+                cleanupDb.SaveChanges();
+            }
+
+            // ==================================================
+            // اختبارات ربط العملاء بنقطة البيع (الكاشير) ومنع التكرار
+            // ==================================================
+            Console.WriteLine("--------------------------------------------------");
+            Console.WriteLine("بدء اختبارات ربط العملاء بنقطة البيع (الكاشير) ومنع التكرار");
+            Console.WriteLine("--------------------------------------------------");
+
+            var posSalesService = new SqliteSalesInvoiceService();
+            var posProductService = new SqliteProductService();
+
+            // تجهيز صنف للاختبار
+            var testPosProduct = new ProductModel
+            {
+                Name = "صنف اختبار عميل الكاشير",
+                PartNumber = "POS-CUST-" + Random.Shared.Next(1000, 9999),
+                Quantity = 50,
+                PurchasePrice = 100m,
+                SellingPrice = 150m
+            };
+            testPosProduct = posProductService.AddProductAsync(testPosProduct).GetAwaiter().GetResult();
+
+            // 1. بيع نقدي مباشر (Walk-in sale) دون إدخال بيانات عميل
+            var walkInInvoice = new SalesInvoiceModel
+            {
+                InvoiceNumber = "POS-TEST-WALKIN-" + Random.Shared.Next(1000, 9999),
+                InvoiceDate = DateTime.Now,
+                CustomerName = "عميل نقدي",
+                CustomerPhone = "",
+                CustomerAddress = "",
+                PaymentMethod = "نقدي",
+                Items = new List<SalesInvoiceItemModel>
+                {
+                    new SalesInvoiceItemModel
+                    {
+                        ProductId = testPosProduct.Id,
+                        PartNumber = testPosProduct.PartNumber,
+                        ProductName = testPosProduct.Name,
+                        Quantity = 1,
+                        UnitPrice = 150m
+                    }
+                }
+            };
+            walkInInvoice.RecalculateTotals();
+            var postedWalkIn = posSalesService.PostInvoiceAsync(walkInInvoice).GetAwaiter().GetResult();
+            Assert(postedWalkIn.CustomerId == null && postedWalkIn.CustomerName == "عميل نقدي",
+                "البيع المباشر لعميل نقدي يسجل CustomerId = null واسم 'عميل نقدي' بنجاح");
+
+            // 2. إنشاء عميل جديد تلقائياً عند كتابة اسم وهاتف غير مسجلين في الكاشير
+            var uniquePhoneRaw = "01055" + Random.Shared.Next(100000, 999999);
+            var autoCreateInvoice = new SalesInvoiceModel
+            {
+                InvoiceNumber = "POS-TEST-AUTO-" + Random.Shared.Next(1000, 9999),
+                InvoiceDate = DateTime.Now,
+                CustomerName = "عميل كاشير جديد",
+                CustomerPhone = uniquePhoneRaw,
+                CustomerAddress = "مدينة نصر - القاهرة",
+                PaymentMethod = "نقدي",
+                Items = new List<SalesInvoiceItemModel>
+                {
+                    new SalesInvoiceItemModel
+                    {
+                        ProductId = testPosProduct.Id,
+                        PartNumber = testPosProduct.PartNumber,
+                        ProductName = testPosProduct.Name,
+                        Quantity = 2,
+                        UnitPrice = 150m
+                    }
+                }
+            };
+            autoCreateInvoice.RecalculateTotals();
+            var postedAuto = posSalesService.PostInvoiceAsync(autoCreateInvoice).GetAwaiter().GetResult();
+            Assert(postedAuto.CustomerId.HasValue && postedAuto.CustomerId.Value > 0,
+                "إنشاء عميل جديد تلقائياً وربطه بالفاتورة بنجاح في نفس المعاملة (Transaction)");
+
+            var createdCustomerInDb = customerService.GetByIdAsync(postedAuto.CustomerId!.Value).GetAwaiter().GetResult();
+            Assert(createdCustomerInDb != null && createdCustomerInDb.Phone == PhoneHelper.Normalize(uniquePhoneRaw),
+                "تخزين هاتف العميل المنشأ في صورة موحدة قياسية (Normalized) في قاعدة البيانات");
+
+            // 3. إعادة استخدام العميل الموجود برقم الهاتف الموحد وتفادي التكرار
+            var formattedPhone = "+20 " + uniquePhoneRaw.Substring(1);
+            var reuseInvoice = new SalesInvoiceModel
+            {
+                InvoiceNumber = "POS-TEST-REUSE-" + Random.Shared.Next(1000, 9999),
+                InvoiceDate = DateTime.Now,
+                CustomerName = "اسم مختلف لن يُغير الأصلي",
+                CustomerPhone = formattedPhone,
+                CustomerAddress = "عنوان جديد لن يمس المسجل",
+                PaymentMethod = "نقدي",
+                Items = new List<SalesInvoiceItemModel>
+                {
+                    new SalesInvoiceItemModel
+                    {
+                        ProductId = testPosProduct.Id,
+                        PartNumber = testPosProduct.PartNumber,
+                        ProductName = testPosProduct.Name,
+                        Quantity = 1,
+                        UnitPrice = 150m
+                    }
+                }
+            };
+            reuseInvoice.RecalculateTotals();
+            var postedReuse = posSalesService.PostInvoiceAsync(reuseInvoice).GetAwaiter().GetResult();
+            Assert(postedReuse.CustomerId == postedAuto.CustomerId,
+                "إعادة استخدام نفس العميل عند تطابق الهاتف الموحد وعدم تكرار إنشاء العميل");
+
+            // التحقق من عدم الكتابة فوق بيانات العميل المسجل
+            var verifyOriginalCustomer = customerService.GetByIdAsync(postedAuto.CustomerId!.Value).GetAwaiter().GetResult();
+            Assert(verifyOriginalCustomer != null && verifyOriginalCustomer.Name == "عميل كاشير جديد" && verifyOriginalCustomer.Address == "مدينة نصر - القاهرة",
+                "حماية بيانات العميل المسجل مسبقاً من الاستبدال وعدم تعديل الحقول الممتلئة");
+
+            // 4. مطابقة الاسم فقط في حال عدم إدخال رقم الهاتف
+            var nameOnlyInvoice = new SalesInvoiceModel
+            {
+                InvoiceNumber = "POS-TEST-NAME-" + Random.Shared.Next(1000, 9999),
+                InvoiceDate = DateTime.Now,
+                CustomerName = "   عميل   كاشير   جديد   ",
+                CustomerPhone = "",
+                CustomerAddress = "",
+                PaymentMethod = "نقدي",
+                Items = new List<SalesInvoiceItemModel>
+                {
+                    new SalesInvoiceItemModel
+                    {
+                        ProductId = testPosProduct.Id,
+                        PartNumber = testPosProduct.PartNumber,
+                        ProductName = testPosProduct.Name,
+                        Quantity = 1,
+                        UnitPrice = 150m
+                    }
+                }
+            };
+            nameOnlyInvoice.RecalculateTotals();
+            var postedNameOnly = posSalesService.PostInvoiceAsync(nameOnlyInvoice).GetAwaiter().GetResult();
+            Assert(postedNameOnly.CustomerId == postedAuto.CustomerId,
+                "مطابقة العميل بالاسم الموحد وإعادة استخدامه بدقة عند عدم إدخال الهاتف");
+
+            // 5. التحقق من البحث والاقتراحات الحية في نقطة البيع
+            var customerSuggestionsList = customerService.GetCustomerSuggestionsAsync("عميل كاشير").GetAwaiter().GetResult().ToList();
+            Assert(customerSuggestionsList.Any(c => c.Id == postedAuto.CustomerId),
+                "استرجاع اقتراحات العملاء الحية المطابقة للاسم في الكاشير بنجاح");
+
+            // تنظيف بيانات اختبار الكاشير
+            using (var cleanupDb = new CarPartsDbContext())
+            {
+                var invoicesToDelete = cleanupDb.SalesInvoices
+                    .Where(i => i.InvoiceNumber.StartsWith("POS-TEST-"))
+                    .ToList();
+                cleanupDb.SalesInvoices.RemoveRange(invoicesToDelete);
+
+                var productToDelete = cleanupDb.Products.Find(testPosProduct.Id);
+                if (productToDelete != null) cleanupDb.Products.Remove(productToDelete);
+
+                if (postedAuto.CustomerId.HasValue)
+                {
+                    var customerToDelete = cleanupDb.Customers.Find(postedAuto.CustomerId.Value);
+                    if (customerToDelete != null) cleanupDb.Customers.Remove(customerToDelete);
+                }
+
+                cleanupDb.SaveChanges();
+            }
+
             Console.WriteLine("==================================================");
             Console.WriteLine($"اكتملت جميع الاختبارات بنجاح: {passed} من أصل {total} اختبارات اجتازت 100%");
             Console.WriteLine("==================================================");

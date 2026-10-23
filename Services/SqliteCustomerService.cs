@@ -106,7 +106,7 @@ namespace CarPartManager.Services
                 var entity = new CustomerModel
                 {
                     Name = customer.Name?.Trim() ?? string.Empty,
-                    Phone = customer.Phone?.Trim() ?? string.Empty,
+                    Phone = PhoneHelper.Normalize(customer.Phone),
                     Address = customer.Address?.Trim() ?? string.Empty,
                     Notes = customer.Notes?.Trim() ?? string.Empty,
                     OpeningBalance = customer.OpeningBalance,
@@ -118,6 +118,7 @@ namespace CarPartManager.Services
                 await ctx.SaveChangesAsync();
 
                 customer.Id = entity.Id;
+                customer.Phone = entity.Phone;
                 customer.CreatedDate = entity.CreatedDate;
                 return customer;
             }
@@ -136,13 +137,14 @@ namespace CarPartManager.Services
                 if (existing == null) return false;
 
                 existing.Name = customer.Name?.Trim() ?? string.Empty;
-                existing.Phone = customer.Phone?.Trim() ?? string.Empty;
+                existing.Phone = PhoneHelper.Normalize(customer.Phone);
                 existing.Address = customer.Address?.Trim() ?? string.Empty;
                 existing.Notes = customer.Notes?.Trim() ?? string.Empty;
                 existing.OpeningBalance = customer.OpeningBalance;
                 existing.IsActive = customer.IsActive;
 
                 await ctx.SaveChangesAsync();
+                customer.Phone = existing.Phone;
                 return true;
             }
             catch (Exception ex)
@@ -208,10 +210,10 @@ namespace CarPartManager.Services
                 .Where(i => i.CustomerId == customerId && i.Status == "معتمدة")
                 .SumAsync(i => (decimal?)(i.GrandTotal - i.PaidAmount)) ?? 0m;
 
-            // مجموع الدفعات المسجلة لهذا العميل
+            // مجموع الدفعات المسجلة الصالحة لهذا العميل (استبعاد الدفعات الملغاة)
             var totalPayments = await ctx.CustomerPayments
                 .AsNoTracking()
-                .Where(p => p.CustomerId == customerId)
+                .Where(p => p.CustomerId == customerId && !p.IsCancelled)
                 .SumAsync(p => (decimal?)p.Amount) ?? 0m;
 
             return Math.Max(0m, openingBalance + invoicesDebt - totalPayments);
@@ -245,6 +247,9 @@ namespace CarPartManager.Services
                         Description = "رصيد افتتاحي عند تسجيل العميل",
                         DebitAmount = customer.OpeningBalance,
                         CreditAmount = 0,
+                        InvoiceTotal = customer.OpeningBalance,
+                        InvoicePaid = 0,
+                        InvoiceRemaining = customer.OpeningBalance,
                         SourceId = 0
                     });
                 }
@@ -273,6 +278,9 @@ namespace CarPartManager.Services
                         Reference = inv.InvoiceNumber,
                         Description = $"فاتورة بيع رقم {inv.InvoiceNumber}" +
                                       (inv.PaidAmount > 0 ? $" (مدفوع: {inv.PaidAmount:N2})" : ""),
+                        InvoiceTotal = inv.GrandTotal,
+                        InvoicePaid = inv.PaidAmount,
+                        InvoiceRemaining = remaining,
                         DebitAmount = remaining,
                         CreditAmount = 0,
                         SourceId = inv.Id
@@ -295,17 +303,38 @@ namespace CarPartManager.Services
 
                 foreach (var pay in payments)
                 {
-                    lines.Add(new CustomerStatementLineModel
+                    if (pay.IsCancelled)
                     {
-                        Date = pay.PaymentDate,
-                        EntryType = "دفعة استلام",
-                        Reference = $"DPT-{pay.Id:D4}",
-                        Description = $"دفعة مستلمة ({pay.PaymentMethod})" +
-                                      (!string.IsNullOrWhiteSpace(pay.Notes) ? $" — {pay.Notes}" : ""),
-                        DebitAmount = 0,
-                        CreditAmount = pay.Amount,
-                        SourceId = pay.Id
-                    });
+                        lines.Add(new CustomerStatementLineModel
+                        {
+                            Date = pay.PaymentDate,
+                            EntryType = "دفعة ملغاة",
+                            Reference = $"DPT-{pay.Id:D4}",
+                            Description = $"دفعة ملغاة ({pay.PaymentMethod})" +
+                                          (!string.IsNullOrWhiteSpace(pay.CancellationReason) ? $" — سبب الإلغاء: {pay.CancellationReason}" : "") +
+                                          (!string.IsNullOrWhiteSpace(pay.Notes) ? $" (ملاحظة: {pay.Notes})" : ""),
+                            DebitAmount = 0,
+                            CreditAmount = 0,
+                            SourceId = pay.Id,
+                            IsCancelledPayment = true,
+                            CancellationReason = pay.CancellationReason
+                        });
+                    }
+                    else
+                    {
+                        lines.Add(new CustomerStatementLineModel
+                        {
+                            Date = pay.PaymentDate,
+                            EntryType = "دفعة استلام",
+                            Reference = $"DPT-{pay.Id:D4}",
+                            Description = $"دفعة مستلمة ({pay.PaymentMethod})" +
+                                          (!string.IsNullOrWhiteSpace(pay.Notes) ? $" — {pay.Notes}" : ""),
+                            DebitAmount = 0,
+                            CreditAmount = pay.Amount,
+                            SourceId = pay.Id,
+                            IsCancelledPayment = false
+                        });
+                    }
                 }
 
                 // ─ ترتيب كل السطور زمنياً وحساب الرصيد التراكمي ──────────────
@@ -365,7 +394,8 @@ namespace CarPartManager.Services
                         PaymentDate = payment.PaymentDate,
                         PaymentMethod = payment.PaymentMethod?.Trim() ?? "نقدي",
                         Notes = payment.Notes?.Trim() ?? string.Empty,
-                        CreatedDate = DateTime.Now
+                        CreatedDate = DateTime.Now,
+                        IsCancelled = false
                     };
 
                     await ctx.CustomerPayments.AddAsync(entity);
@@ -374,6 +404,7 @@ namespace CarPartManager.Services
 
                     payment.Id = entity.Id;
                     payment.CreatedDate = entity.CreatedDate;
+                    payment.IsCancelled = false;
                     return payment;
                 }
                 catch
@@ -388,23 +419,111 @@ namespace CarPartManager.Services
             }
         }
 
+        /// <summary>
+        /// إلغاء دفعة مسجلة بالخطأ مع توثيق السبب والتاريخ دون حذف السجل المالي
+        /// </summary>
+        public async Task<bool> CancelPaymentAsync(int paymentId, string reason)
+        {
+            try
+            {
+                using var ctx = CreateContext();
+                await using var transaction = await ctx.Database.BeginTransactionAsync();
+                try
+                {
+                    var existing = await ctx.CustomerPayments.FirstOrDefaultAsync(p => p.Id == paymentId);
+                    if (existing == null || existing.IsCancelled) return false;
+
+                    existing.IsCancelled = true;
+                    existing.CancellationDate = DateTime.Now;
+                    existing.CancellationReason = string.IsNullOrWhiteSpace(reason)
+                        ? "إلغاء دفعة مسجلة بالخطأ"
+                        : reason.Trim();
+
+                    await ctx.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    return true;
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"فشل إلغاء الدفعة رقم {paymentId}: {ex.Message}", ex);
+            }
+        }
+
         // ══════════════════════════════════════════════════════════════════════
         // التحقق من الهاتف
         // ══════════════════════════════════════════════════════════════════════
 
-        public async Task<bool> PhoneExistsAsync(string phone, int excludeCustomerId = 0)
+        public async Task<CustomerModel?> FindCustomerByPhoneAsync(string phone, int excludeCustomerId = 0)
         {
-            if (string.IsNullOrWhiteSpace(phone)) return false;
+            var normalized = PhoneHelper.Normalize(phone);
+            if (string.IsNullOrWhiteSpace(normalized)) return null;
+
             try
             {
                 using var ctx = CreateContext();
-                var trimmed = phone.Trim();
-                return await ctx.Customers.AnyAsync(c =>
-                    c.Phone == trimmed && c.Id != excludeCustomerId);
+                var candidates = await ctx.Customers
+                    .AsNoTracking()
+                    .Where(c => c.Id != excludeCustomerId && c.Phone != null && c.Phone != "")
+                    .ToListAsync();
+
+                return candidates.FirstOrDefault(c => PhoneHelper.Normalize(c.Phone) == normalized);
             }
             catch
             {
-                return false; // عدم إيقاف العملية عند فشل فحص التكرار
+                return null;
+            }
+        }
+
+        public async Task<bool> PhoneExistsAsync(string phone, int excludeCustomerId = 0)
+        {
+            var customer = await FindCustomerByPhoneAsync(phone, excludeCustomerId);
+            return customer != null;
+        }
+
+        public async Task<IEnumerable<CustomerModel>> GetCustomerSuggestionsAsync(string query, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(query)) return Enumerable.Empty<CustomerModel>();
+
+            var q = query.Trim().ToLower();
+            var normQueryDigits = PhoneHelper.NormalizeDigits(q);
+
+            try
+            {
+                using var ctx = CreateContext();
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var matches = await ctx.Customers
+                    .AsNoTracking()
+                    .Where(c => c.IsActive && (
+                        c.Name.ToLower().Contains(q) ||
+                        (c.Phone != null && c.Phone.Contains(q)) ||
+                        (!string.IsNullOrEmpty(normQueryDigits) && c.Phone != null && c.Phone.Contains(normQueryDigits))))
+                    .OrderBy(c => c.Name.ToLower().StartsWith(q) ? 0 : 1)
+                    .ThenBy(c => c.Name)
+                    .Take(8)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var c in matches)
+                {
+                    c.CurrentBalance = await CalculateBalanceInternalAsync(ctx, c.Id, c.OpeningBalance);
+                }
+
+                return matches;
+            }
+            catch (OperationCanceledException)
+            {
+                return Enumerable.Empty<CustomerModel>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CustomerSuggestions] Error: {ex.Message}");
+                return Enumerable.Empty<CustomerModel>();
             }
         }
     }

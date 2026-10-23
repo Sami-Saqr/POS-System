@@ -56,6 +56,13 @@ namespace CarPartManager.Models
             set => SetProperty(ref _customerPhone, value);
         }
 
+        private string? _customerAddress;
+        public string? CustomerAddress
+        {
+            get => _customerAddress;
+            set => SetProperty(ref _customerAddress, value);
+        }
+
         private string _status = "مسودة"; // "مسودة" (Draft) أو "معتمدة" (Posted)
         public string Status
         {

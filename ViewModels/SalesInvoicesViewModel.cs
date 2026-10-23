@@ -15,6 +15,7 @@ namespace CarPartManager.ViewModels
     {
         private readonly ISalesInvoiceService _invoiceService;
         private readonly IProductService _productService;
+        private readonly ICustomerService _customerService;
         private readonly Task _initializationTask;
 
         private readonly List<ProductModel> _allProducts = new();
@@ -25,6 +26,7 @@ namespace CarPartManager.ViewModels
         public ObservableCollection<SalesInvoiceItemModel> CurrentInvoiceItems { get; } = new();
         public ObservableCollection<SalesInvoiceModel> InvoicesHistory { get; } = new();
         public ObservableCollection<ProductModel> BarcodeSuggestions { get; } = new();
+        public ObservableCollection<CustomerModel> CustomerSuggestions { get; } = new();
         public ObservableCollection<string> PaymentMethodsList { get; } = new() { "نقدي", "شبكة / فيزا", "آجل" };
 
         public static bool IsHeadlessTestMode { get; set; }
@@ -83,19 +85,107 @@ namespace CarPartManager.ViewModels
             set => SetProperty(ref _invoiceDate, value);
         }
 
+        private int? _selectedCustomerId;
+        public int? SelectedCustomerId
+        {
+            get => _selectedCustomerId;
+            set
+            {
+                if (SetProperty(ref _selectedCustomerId, value))
+                {
+                    OnPropertyChanged(nameof(HasSelectedCustomer));
+                }
+            }
+        }
+
+        public bool HasSelectedCustomer => SelectedCustomerId.HasValue && SelectedCustomerId.Value > 0;
+
         private string _customerName = "عميل نقدي";
         public string CustomerName
         {
             get => _customerName;
-            set => SetProperty(ref _customerName, value);
+            set
+            {
+                if (SetProperty(ref _customerName, value))
+                {
+                    if (!_suppressCustomerSuggestions)
+                    {
+                        if (SelectedCustomerId.HasValue && value != _selectedCustomerSuggestion?.Name)
+                        {
+                            SelectedCustomerId = null;
+                        }
+                        OnCustomerInputChanged(value);
+                    }
+                }
+            }
         }
 
         private string _customerPhone = string.Empty;
         public string CustomerPhone
         {
             get => _customerPhone;
-            set => SetProperty(ref _customerPhone, value);
+            set
+            {
+                if (SetProperty(ref _customerPhone, value))
+                {
+                    if (!_suppressCustomerSuggestions)
+                    {
+                        OnCustomerInputChanged(value);
+                    }
+                }
+            }
         }
+
+        private string _customerAddress = string.Empty;
+        public string CustomerAddress
+        {
+            get => _customerAddress;
+            set => SetProperty(ref _customerAddress, value);
+        }
+
+        private CustomerModel? _selectedCustomerSuggestion;
+        public CustomerModel? SelectedCustomerSuggestion
+        {
+            get => _selectedCustomerSuggestion;
+            set => SetProperty(ref _selectedCustomerSuggestion, value);
+        }
+
+        private bool _isCustomerPopupOpen;
+        public bool IsCustomerPopupOpen
+        {
+            get => _isCustomerPopupOpen;
+            set
+            {
+                if (SetProperty(ref _isCustomerPopupOpen, value))
+                {
+                    OnPropertyChanged(nameof(ShowNoCustomerSuggestions));
+                }
+            }
+        }
+
+        private bool _isLoadingCustomerSuggestions;
+        public bool IsLoadingCustomerSuggestions
+        {
+            get => _isLoadingCustomerSuggestions;
+            set
+            {
+                if (SetProperty(ref _isLoadingCustomerSuggestions, value))
+                {
+                    OnPropertyChanged(nameof(ShowNoCustomerSuggestions));
+                }
+            }
+        }
+
+        private string _customerSearchText = string.Empty;
+        public bool ShowNoCustomerSuggestions =>
+            IsCustomerPopupOpen &&
+            !IsLoadingCustomerSuggestions &&
+            CustomerSuggestions.Count == 0 &&
+            !string.IsNullOrWhiteSpace(_customerSearchText) &&
+            _customerSearchText.Trim().Length >= 2;
+
+        private bool _suppressCustomerSuggestions;
+        private CancellationTokenSource? _customerSearchCts;
 
         private string _status = "مسودة";
         public string Status
@@ -337,6 +427,8 @@ namespace CarPartManager.ViewModels
         public RelayCommand AddItemCommand { get; }
         public RelayCommand AddItemByBarcodeCommand { get; }
         public RelayCommand SelectBarcodeSuggestionCommand { get; }
+        public RelayCommand SelectCustomerSuggestionCommand { get; }
+        public RelayCommand ClearSelectedCustomerCommand { get; }
         public RelayCommand LoadInvoiceCommand { get; }
         public RelayCommand RemoveItemCommand { get; }
         public RelayCommand SaveDraftCommand { get; }
@@ -348,10 +440,12 @@ namespace CarPartManager.ViewModels
 
         public SalesInvoicesViewModel(
             ISalesInvoiceService? invoiceService = null,
-            IProductService? productService = null)
+            IProductService? productService = null,
+            ICustomerService? customerService = null)
         {
             _invoiceService = invoiceService ?? new SqliteSalesInvoiceService();
             _productService = productService ?? new SqliteProductService();
+            _customerService = customerService ?? new SqliteCustomerService();
 
             // CanEditInvoice (مسودة غير معتمدة ولا ملغاة) يكفي حراسةً وظيفية كاملة.
             // حذف IsInitialized من الشرط لأن تأخر إشعار UI thread كان يجعل الأزرار معطلة
@@ -364,6 +458,22 @@ namespace CarPartManager.ViewModels
                 {
                     SelectBarcodeSuggestion(product);
                 }
+            }, () => CanEditInvoice);
+            SelectCustomerSuggestionCommand = new RelayCommand(p =>
+            {
+                if (p is CustomerModel customer)
+                {
+                    SelectCustomerSuggestion(customer);
+                }
+            }, () => CanEditInvoice);
+            ClearSelectedCustomerCommand = new RelayCommand(() =>
+            {
+                SelectedCustomerId = null;
+                SelectedCustomerSuggestion = null;
+                CustomerName = "عميل نقدي";
+                CustomerPhone = string.Empty;
+                CustomerAddress = string.Empty;
+                CloseCustomerSuggestions();
             }, () => CanEditInvoice);
             LoadInvoiceCommand = new RelayCommand(p =>
             {
@@ -499,8 +609,12 @@ namespace CarPartManager.ViewModels
             CurrentInvoiceId = 0;
             InvoiceNumber = await _invoiceService.GenerateNextInvoiceNumberAsync();
             InvoiceDate = DateTime.Now;
+            SelectedCustomerId = null;
+            SelectedCustomerSuggestion = null;
             CustomerName = "عميل نقدي";
             CustomerPhone = string.Empty;
+            CustomerAddress = string.Empty;
+            CloseCustomerSuggestions();
             Status = "مسودة";
             PaymentMethod = "نقدي";
             Discount = 0m;
@@ -900,8 +1014,10 @@ namespace CarPartManager.ViewModels
                     Id = CurrentInvoiceId,
                     InvoiceNumber = InvoiceNumber,
                     InvoiceDate = InvoiceDate,
+                    CustomerId = SelectedCustomerId,
                     CustomerName = string.IsNullOrWhiteSpace(CustomerName) ? "عميل نقدي" : CustomerName.Trim(),
                     CustomerPhone = CustomerPhone?.Trim() ?? string.Empty,
+                    CustomerAddress = CustomerAddress?.Trim() ?? string.Empty,
                     Status = "مسودة",
                     SubTotal = SubTotal,
                     Discount = Discount,
@@ -959,8 +1075,10 @@ namespace CarPartManager.ViewModels
                     Id = CurrentInvoiceId,
                     InvoiceNumber = InvoiceNumber,
                     InvoiceDate = InvoiceDate,
+                    CustomerId = SelectedCustomerId,
                     CustomerName = string.IsNullOrWhiteSpace(CustomerName) ? "عميل نقدي" : CustomerName.Trim(),
                     CustomerPhone = CustomerPhone?.Trim() ?? string.Empty,
+                    CustomerAddress = CustomerAddress?.Trim() ?? string.Empty,
                     Status = "مسودة",
                     SubTotal = SubTotal,
                     Discount = Discount,
@@ -1042,8 +1160,11 @@ namespace CarPartManager.ViewModels
             CurrentInvoiceId = invoice.Id;
             InvoiceNumber = invoice.InvoiceNumber;
             InvoiceDate = invoice.InvoiceDate;
+            SelectedCustomerId = invoice.CustomerId;
             CustomerName = invoice.CustomerName ?? "عميل نقدي";
             CustomerPhone = invoice.CustomerPhone ?? string.Empty;
+            CustomerAddress = invoice.CustomerAddress ?? string.Empty;
+            CloseCustomerSuggestions();
             Status = invoice.Status;
             SubTotal = invoice.SubTotal;
             Discount = invoice.Discount;
@@ -1061,5 +1182,137 @@ namespace CarPartManager.ViewModels
             RecalculateTotals();
             StatusMessage = $"تم فتح الفاتورة '{invoice.InvoiceNumber}' ({Status}).";
         }
+
+        private void OnCustomerInputChanged(string input)
+        {
+            _customerSearchCts?.Cancel();
+            _customerSearchCts?.Dispose();
+            _customerSearchCts = null;
+
+            var trimmed = input?.Trim() ?? string.Empty;
+            _customerSearchText = trimmed;
+
+            if (string.IsNullOrWhiteSpace(trimmed) || trimmed == "عميل نقدي" || trimmed.Length < 2)
+            {
+                CloseCustomerSuggestions();
+                return;
+            }
+
+            IsCustomerPopupOpen = true;
+            IsLoadingCustomerSuggestions = true;
+
+            var cts = new CancellationTokenSource();
+            _customerSearchCts = cts;
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(200, cts.Token);
+                    if (cts.Token.IsCancellationRequested) return;
+
+                    var results = await _customerService.GetCustomerSuggestionsAsync(trimmed, cts.Token);
+                    if (cts.Token.IsCancellationRequested) return;
+
+                    if (System.Windows.Application.Current?.Dispatcher != null)
+                    {
+                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            if (cts.Token.IsCancellationRequested) return;
+                            CustomerSuggestions.Clear();
+                            foreach (var c in results) CustomerSuggestions.Add(c);
+                            IsLoadingCustomerSuggestions = false;
+                            SelectedCustomerSuggestion = CustomerSuggestions.FirstOrDefault();
+                            OnPropertyChanged(nameof(ShowNoCustomerSuggestions));
+                        });
+                    }
+                    else
+                    {
+                        CustomerSuggestions.Clear();
+                        foreach (var c in results) CustomerSuggestions.Add(c);
+                        IsLoadingCustomerSuggestions = false;
+                        SelectedCustomerSuggestion = CustomerSuggestions.FirstOrDefault();
+                        OnPropertyChanged(nameof(ShowNoCustomerSuggestions));
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Debounce cancelled
+                }
+                catch
+                {
+                    IsLoadingCustomerSuggestions = false;
+                }
+            }, cts.Token);
+        }
+
+        public void SelectCustomerSuggestion(CustomerModel customer)
+        {
+            if (customer == null) return;
+
+            _suppressCustomerSuggestions = true;
+            try
+            {
+                SelectedCustomerId = customer.Id;
+                SelectedCustomerSuggestion = customer;
+                CustomerName = customer.Name;
+                CustomerPhone = customer.Phone ?? string.Empty;
+                CustomerAddress = customer.Address ?? string.Empty;
+            }
+            finally
+            {
+                _suppressCustomerSuggestions = false;
+            }
+
+            CloseCustomerSuggestions();
+        }
+
+        public void CloseCustomerSuggestions()
+        {
+            _customerSearchCts?.Cancel();
+            _customerSearchCts?.Dispose();
+            _customerSearchCts = null;
+
+            IsCustomerPopupOpen = false;
+            CustomerSuggestions.Clear();
+            IsLoadingCustomerSuggestions = false;
+            OnPropertyChanged(nameof(ShowNoCustomerSuggestions));
+        }
+
+        public void SelectNextCustomerSuggestion()
+        {
+            if (!IsCustomerPopupOpen || CustomerSuggestions.Count == 0) return;
+
+            if (SelectedCustomerSuggestion == null)
+            {
+                SelectedCustomerSuggestion = CustomerSuggestions[0];
+            }
+            else
+            {
+                int idx = CustomerSuggestions.IndexOf(SelectedCustomerSuggestion);
+                if (idx >= 0 && idx < CustomerSuggestions.Count - 1)
+                {
+                    SelectedCustomerSuggestion = CustomerSuggestions[idx + 1];
+                }
+            }
+        }
+
+        public void SelectPreviousCustomerSuggestion()
+        {
+            if (!IsCustomerPopupOpen || CustomerSuggestions.Count == 0) return;
+
+            if (SelectedCustomerSuggestion == null) return;
+
+            int idx = CustomerSuggestions.IndexOf(SelectedCustomerSuggestion);
+            if (idx > 0)
+            {
+                SelectedCustomerSuggestion = CustomerSuggestions[idx - 1];
+            }
+            else if (idx == 0)
+            {
+                SelectedCustomerSuggestion = null;
+            }
+        }
     }
 }
+

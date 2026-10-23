@@ -1,0 +1,366 @@
+<UserControl x:Class="CarPartManager.Views.InventoryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:viewmodels="clr-namespace:CarPartManager.ViewModels"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=viewmodels:InventoryViewModel}"
+             d:DesignHeight="750" d:DesignWidth="1100"
+             FlowDirection="RightToLeft">
+
+    <Grid Margin="28,24,28,28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,20">
+            <StackPanel>
+                <TextBlock Text="المخزون والجرد"
+                           FontSize="22"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource TextPrimaryBrush}" />
+                <TextBlock Text="مراقبة أرصدة المستودع، تتبع حركات الإدخال والإخراج، والتسوية الجردية"
+                           FontSize="13"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Margin="0,4,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Tab Control -->
+        <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedTabIndex}" Style="{StaticResource CleanTabControlStyle}">
+
+            <!-- Tab 1: Stock Overview -->
+            <TabItem Header="نظرة عامة على المخزون">
+                <Grid Margin="16,16,16,16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Summary Cards -->
+                    <Grid Grid.Row="0" Margin="0,0,0,20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Product Count -->
+                        <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}" Padding="16,14">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="إجمالي الأصناف" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding Summary.ProductCount, StringFormat='{}{0} صنف'}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,4,0,0" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#EFF6FF" CornerRadius="8" Width="36" Height="36">
+                                    <Path Data="M20 7l-8-4-8 4 8 4 8-4zm-8 6l-8-4v8l8 4 8-4v-8l-8 4z" Fill="{StaticResource PrimaryBlueBrush}" Width="18" Height="18" Stretch="Uniform" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <!-- Total Stock Value -->
+                        <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}" Padding="16,14">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="قيمة المخزون (التكلفة)" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding Summary.TotalStockValue, StringFormat='{}{0:N2} ج.م'}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource SalesGreenBrush}" Margin="0,4,0,0" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#ECFDF5" CornerRadius="8" Width="36" Height="36">
+                                    <Path Data="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z" Fill="{StaticResource SalesGreenBrush}" Width="18" Height="18" Stretch="Uniform" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <!-- Low Stock Count -->
+                        <Border Grid.Column="4" Style="{StaticResource MetricCardStyle}" Padding="16,14">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="أصناف منخفضة" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding Summary.LowStockCount, StringFormat='{}{0} قطع'}" FontSize="20" FontWeight="Bold" Foreground="#D97706" Margin="0,4,0,0" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#FEF3C7" CornerRadius="8" Width="36" Height="36">
+                                    <Path Data="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" Fill="#D97706" Width="18" Height="18" Stretch="Uniform" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <!-- Out of Stock Count -->
+                        <Border Grid.Column="6" Style="{StaticResource MetricCardStyle}" Padding="16,14">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="نفد من المخزون" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding Summary.OutOfStockCount, StringFormat='{}{0} صنف'}" FontSize="20" FontWeight="Bold" Foreground="#DC2626" Margin="0,4,0,0" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Background="#FEF2F2" CornerRadius="8" Width="36" Height="36">
+                                    <Path Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" Fill="#DC2626" Width="18" Height="18" Stretch="Uniform" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <!-- Filter Bar -->
+                    <Border Grid.Row="1" Background="{StaticResource CardBackgroundBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="16,12"
+                            Margin="0,0,0,16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Grid Grid.Column="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <Path Grid.Column="0"
+                                      Data="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+                                      Fill="{StaticResource TextSecondaryBrush}"
+                                      Width="16" Height="16" Stretch="Uniform"
+                                      Margin="0,0,10,0" VerticalAlignment="Center" />
+
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding StockSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource StandardTextBoxStyle}"
+                                         BorderThickness="0"
+                                         FontSize="13"
+                                         VerticalContentAlignment="Center"
+                                         Tag="ابحث بالاسم، الباركود، أو كود القطعة..." />
+
+                                <Button Grid.Column="2"
+                                        Style="{StaticResource OutlineButtonStyle}"
+                                        Command="{Binding ClearStockFilterCommand}"
+                                        Height="28" Padding="8,0" Margin="12,0,0,0">
+                                    <TextBlock Text="مسح البحث" FontSize="11" />
+                                </Button>
+
+                                <Button Grid.Column="3"
+                                        Style="{StaticResource OutlineButtonStyle}"
+                                        Command="{Binding RefreshStockCommand}"
+                                        Height="28" Padding="8,0" Margin="8,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Data="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+                                              Fill="{StaticResource TextSecondaryBrush}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0" />
+                                        <TextBlock Text="تحديث" FontSize="11" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </Grid>
+                    </Border>
+
+                    <!-- Stock DataGrid -->
+                    <Border Grid.Row="2" Style="{StaticResource ContentPanelCardStyle}" Padding="0">
+                        <DataGrid Style="{StaticResource CleanDataGridStyle}"
+                                  ItemsSource="{Binding StockProducts}"
+                                  SelectedItem="{Binding SelectedStockProduct, Mode=TwoWay}"
+                                  RowHeight="48"
+                                  SelectionMode="Single">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2*" />
+                                <DataGridTextColumn Header="الباركود" Binding="{Binding Barcode}" Width="120" />
+                                <DataGridTextColumn Header="التصنيف" Binding="{Binding Category}" Width="120" />
+                                <DataGridTextColumn Header="الكمية" Binding="{Binding Quantity}" Width="80" />
+                                <DataGridTextColumn Header="حد الطلب" Binding="{Binding MinimumStock}" Width="80" />
+                                <DataGridTextColumn Header="سعر التكلفة" Binding="{Binding CostPrice, StringFormat='{}{0:N2}'}" Width="100" />
+                                <DataGridTextColumn Header="قيمة المخزون" Binding="{Binding StockValue, StringFormat='{}{0:N2}'}" Width="100" />
+                                <DataGridTemplateColumn Header="الحالة" Width="100">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border CornerRadius="4" Padding="6,3" HorizontalAlignment="Left">
+                                                <TextBlock Text="{Binding Status}" FontSize="11" FontWeight="Bold" Foreground="{Binding StatusColor}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Tab 2: Stock Movements -->
+            <TabItem Header="حركات المخزون">
+                <Grid Margin="16,16,16,16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Movement Filters -->
+                    <Border Grid.Row="0" Background="{StaticResource CardBackgroundBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="16,12"
+                            Margin="0,0,0,16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="من:" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12" />
+                            <DatePicker Grid.Column="1" SelectedDate="{Binding MovementFromDate}" Width="120" Margin="0,0,12,0" FontSize="12" />
+
+                            <TextBlock Grid.Column="2" Text="إلى:" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12" />
+                            <DatePicker Grid.Column="3" SelectedDate="{Binding MovementToDate}" Width="120" Margin="0,0,12,0" FontSize="12" />
+
+                            <ComboBox Grid.Column="4"
+                                      ItemsSource="{Binding MovementTypes}"
+                                      SelectedItem="{Binding SelectedMovementType}"
+                                      Width="200"
+                                      Margin="0,0,12,0"
+                                      FontSize="12"
+                                      VerticalContentAlignment="Center" />
+
+                            <StackPanel Grid.Column="5" Orientation="Horizontal">
+                                <Button Style="{StaticResource OutlineButtonStyle}"
+                                        Command="{Binding ClearMovementFilterCommand}"
+                                        Height="28" Padding="8,0" Margin="0,0,8,0">
+                                    <TextBlock Text="مسح الفلتر" FontSize="11" />
+                                </Button>
+                                <Button Style="{StaticResource OutlineButtonStyle}"
+                                        Command="{Binding RefreshMovementsCommand}"
+                                        Height="28" Padding="8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Data="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+                                              Fill="{StaticResource TextSecondaryBrush}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0" />
+                                        <TextBlock Text="تحديث" FontSize="11" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Manual Adjustment Section -->
+                    <Border Grid.Row="1" Background="#F8FAFC"
+                            BorderBrush="#E2E8F0"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16,12"
+                            Margin="0,0,0,16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="تعديل يدوي على:"
+                                       VerticalAlignment="Center"
+                                       FontWeight="Bold"
+                                       FontSize="13"
+                                       Margin="0,0,12,0" />
+
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding SelectedStockProduct.Name, FallbackValue='الرجاء اختيار صنف من جدول نظرة عامة على المخزون'}"
+                                       VerticalAlignment="Center"
+                                       FontSize="13"
+                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       TextWrapping="Wrap" />
+
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="12,0,0,0">
+                                <TextBox Text="{Binding AdjustmentQuantityChange}"
+                                         Width="80"
+                                         Height="32"
+                                         VerticalContentAlignment="Center"
+                                         TextAlignment="Center"
+                                         Margin="0,0,8,0"
+                                         FontSize="12"
+                                         Tag="التغيير (+/-)" />
+
+                                <TextBox Text="{Binding AdjustmentReason}"
+                                         Width="140"
+                                         Height="32"
+                                         VerticalContentAlignment="Center"
+                                         Margin="0,0,8,0"
+                                         FontSize="12"
+                                         Tag="السبب (مطلوب)" />
+
+                                <Button Style="{StaticResource PrimaryButtonStyle}"
+                                        Command="{Binding RecordAdjustmentCommand}"
+                                        Height="32" Padding="12,0">
+                                    <TextBlock Text="تسجيل" FontWeight="Bold" FontSize="12" />
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Movements DataGrid -->
+                    <Border Grid.Row="2" Style="{StaticResource ContentPanelCardStyle}" Padding="0">
+                        <Grid>
+                            <DataGrid Style="{StaticResource CleanDataGridStyle}"
+                                      ItemsSource="{Binding Movements}"
+                                      SelectedItem="{Binding SelectedMovement, Mode=TwoWay}"
+                                      RowHeight="42"
+                                      SelectionMode="Single">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="التاريخ" Binding="{Binding MovementDate, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}" Width="140" />
+                                    <DataGridTextColumn Header="الصنف" Binding="{Binding ProductName}" Width="2*" />
+                                    <DataGridTextColumn Header="النوع" Binding="{Binding MovementType}" Width="180" />
+                                    <DataGridTextColumn Header="التغيير" Binding="{Binding QuantityChange, StringFormat='{}{0:+0;-0}'}" Width="80" />
+                                    <DataGridTextColumn Header="قبل" Binding="{Binding PreviousQuantity}" Width="70" />
+                                    <DataGridTextColumn Header="بعد" Binding="{Binding NewQuantity}" Width="70" />
+                                    <DataGridTextColumn Header="المرجع" Binding="{Binding ReferenceNumber}" Width="120" />
+                                    <DataGridTextColumn Header="ملاحظات" Binding="{Binding Notes}" Width="2*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <!-- Consistency Check Button -->
+                            <Button Style="{StaticResource OutlineButtonStyle}"
+                                    Command="{Binding CheckConsistencyCommand}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Top"
+                                    Margin="0,12,12,0"
+                                    Height="32" Padding="12,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
+                                          Fill="{StaticResource TextSecondaryBrush}" Width="16" Height="16" Stretch="Uniform" Margin="0,0,6,0" />
+                                    <TextBlock Text="فحص التطابق" FontWeight="Bold" FontSize="12" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+        </TabControl>
+    </Grid>
+</UserControl>

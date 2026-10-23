@@ -73,8 +73,16 @@ namespace CarPartManager.ViewModels
         public string StatusMessage
         {
             get => _statusMessage;
-            set => SetProperty(ref _statusMessage, value);
+            set
+            {
+                if (SetProperty(ref _statusMessage, value))
+                {
+                    OnPropertyChanged(nameof(HasStatusMessage));
+                }
+            }
         }
+
+        public bool HasStatusMessage => !string.IsNullOrWhiteSpace(_statusMessage);
 
         private bool _isStatusError;
         public bool IsStatusError
@@ -89,11 +97,20 @@ namespace CarPartManager.ViewModels
         // نموذج الإضافة / التعديل
         // ══════════════════════════════════════════════════════════════════════
 
+        public bool CanSaveCustomer => !string.IsNullOrWhiteSpace(FormName);
+
         private string _formName = string.Empty;
         public string FormName
         {
             get => _formName;
-            set => SetProperty(ref _formName, value);
+            set
+            {
+                if (SetProperty(ref _formName, value))
+                {
+                    OnPropertyChanged(nameof(CanSaveCustomer));
+                    SaveCustomerCommand?.RaiseCanExecuteChanged();
+                }
+            }
         }
 
         private string _formPhone = string.Empty;
@@ -172,6 +189,26 @@ namespace CarPartManager.ViewModels
             set => SetProperty(ref _statementTotalCredit, value);
         }
 
+        private decimal _statementTotalSales;
+        /// <summary>
+        /// إجمالي مبيعات العميل (شامل المبالغ المسددة بالفواتير)
+        /// </summary>
+        public decimal StatementTotalSales
+        {
+            get => _statementTotalSales;
+            set => SetProperty(ref _statementTotalSales, value);
+        }
+
+        private decimal _statementTotalPaid;
+        /// <summary>
+        /// إجمالي المسدد من العميل (المدفوع بالفواتير + الدفعات المستلمة)
+        /// </summary>
+        public decimal StatementTotalPaid
+        {
+            get => _statementTotalPaid;
+            set => SetProperty(ref _statementTotalPaid, value);
+        }
+
         private decimal _statementFinalBalance;
         public decimal StatementFinalBalance
         {
@@ -248,6 +285,7 @@ namespace CarPartManager.ViewModels
         public RelayCommand ShowPaymentCommand { get; }
         public RelayCommand BackToListCommand { get; }
         public RelayCommand SavePaymentCommand { get; }
+        public RelayCommand CancelPaymentCommand { get; }
         public RelayCommand FilterAllCommand { get; }
         public RelayCommand FilterActiveCommand { get; }
         public RelayCommand FilterBalanceCommand { get; }
@@ -260,37 +298,58 @@ namespace CarPartManager.ViewModels
         {
             _customerService = customerService ?? new SqliteCustomerService();
 
-            SaveCustomerCommand = new RelayCommand(async () => await ExecuteSaveCustomerAsync());
-            ClearFormCommand = new RelayCommand(ClearForm);
+            SaveCustomerCommand = new RelayCommand(
+                async () => await ExecuteSaveCustomerAsync(),
+                () => CanSaveCustomer);
+            ClearFormCommand = new RelayCommand(() => ClearForm());
             ToggleActiveCommand = new RelayCommand(
                 async () => await ExecuteToggleActiveAsync(),
                 () => HasSelectedCustomer);
             RefreshCommand = new RelayCommand(async () => await LoadCustomersAsync());
             ShowStatementCommand = new RelayCommand(
-                async () => await ExecuteShowStatementAsync(),
-                () => HasSelectedCustomer);
+                async param => await ExecuteShowStatementAsync(param));
             ShowPaymentCommand = new RelayCommand(
-                () => ExecuteShowPayment(),
-                () => HasSelectedCustomer);
+                param => ExecuteShowPayment(param));
             BackToListCommand = new RelayCommand(() => CurrentMode = ScreenMode.List);
             SavePaymentCommand = new RelayCommand(async () => await ExecuteSavePaymentAsync());
+            CancelPaymentCommand = new RelayCommand(async param => await ExecuteCancelPaymentAsync(param));
             FilterAllCommand = new RelayCommand(() => FilterMode = "all");
             FilterActiveCommand = new RelayCommand(() => FilterMode = "active");
             FilterBalanceCommand = new RelayCommand(() => FilterMode = "has_balance");
 
+            // الاشتراك في أحداث تحديث العملاء والفواتير للتحديث التلقائي الحي دون الحاجة لإعادة تشغيل البرنامج
+            DataEvents.CustomersChanged += OnExternalCustomersChanged;
+            DataEvents.InventoryOrInvoicesChanged += OnExternalCustomersChanged;
+
             _ = LoadCustomersAsync();
+        }
+
+        private void OnExternalCustomersChanged()
+        {
+            if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+            {
+                System.Windows.Application.Current.Dispatcher.InvokeAsync(async () => await LoadCustomersAsync(clearStatus: false));
+            }
+            else
+            {
+                _ = LoadCustomersAsync(clearStatus: false);
+            }
         }
 
         // ══════════════════════════════════════════════════════════════════════
         // تحميل العملاء
         // ══════════════════════════════════════════════════════════════════════
 
-        public async Task LoadCustomersAsync()
+        public async Task LoadCustomersAsync(bool clearStatus = true)
         {
             try
             {
                 IsLoading = true;
-                StatusMessage = string.Empty;
+                if (clearStatus)
+                {
+                    StatusMessage = string.Empty;
+                    IsStatusError = false;
+                }
 
                 var customers = await _customerService.GetAllCustomersAsync();
                 _allCustomers.Clear();
@@ -350,7 +409,7 @@ namespace CarPartManager.ViewModels
             FormIsActive = c.IsActive;
         }
 
-        private void ClearForm()
+        private void ClearForm(bool clearStatus = true)
         {
             SelectedCustomer = null;
             FormName = string.Empty;
@@ -359,8 +418,11 @@ namespace CarPartManager.ViewModels
             FormNotes = string.Empty;
             FormOpeningBalanceText = "0";
             FormIsActive = true;
-            StatusMessage = string.Empty;
-            IsStatusError = false;
+            if (clearStatus)
+            {
+                StatusMessage = string.Empty;
+                IsStatusError = false;
+            }
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -376,78 +438,81 @@ namespace CarPartManager.ViewModels
                 return;
             }
 
-            // ── التحقق من رقم الهاتف (تحذير فقط عند التكرار) ─────────────────
+            // ── التحقق من رقم الهاتف وتوحيده ومنع التكرار ────────────────────
+            string normalizedPhone = string.Empty;
             if (!string.IsNullOrWhiteSpace(FormPhone))
             {
-                // تحقق شكلي بسيط
-                if (!IsValidPhoneLoose(FormPhone))
+                if (!PhoneHelper.IsValid(FormPhone))
                 {
-                    SetStatus("رقم الهاتف يبدو غير صحيح — يُرجى التحقق من الأرقام.", error: true);
+                    SetStatus("رقم الهاتف غير صالح — يجب أن يتكون من 7 إلى 15 رقماً.", error: true);
                     return;
                 }
 
-                // تحذير من تكرار الهاتف (لا يمنع الحفظ)
+                normalizedPhone = PhoneHelper.Normalize(FormPhone);
+
                 var excludeId = SelectedCustomer?.Id ?? 0;
-                var phoneExists = await _customerService.PhoneExistsAsync(FormPhone, excludeId);
-                if (phoneExists)
+                var existingCustomer = await _customerService.FindCustomerByPhoneAsync(normalizedPhone, excludeId);
+                if (existingCustomer != null)
                 {
-                    var proceed = MessageBox.Show(
-                        $"رقم الهاتف '{FormPhone}' مسجل بالفعل لعميل آخر.\nهل تريد المتابعة؟",
-                        "تنبيه: هاتف مكرر",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Warning);
-                    if (proceed != MessageBoxResult.Yes) return;
+                    SetStatus($"رقم الهاتف مسجل بالفعل للعميل '{existingCustomer.Name}'.", error: true);
+                    return;
                 }
             }
 
-            // ── التحقق من الرصيد الافتتاحي ───────────────────────────────────
-            if (!decimal.TryParse(FormOpeningBalanceText, out var openingBalance) || openingBalance < 0)
+            // ── التحقق من الرصيد الافتتاحي (اختياري، الافتراضي 0) ───────────
+            decimal openingBalance = 0m;
+            if (!string.IsNullOrWhiteSpace(FormOpeningBalanceText))
             {
-                SetStatus("الرصيد الافتتاحي يجب أن يكون رقماً صحيحاً (0 أو أكثر).", error: true);
-                return;
+                var normalizedDigits = PhoneHelper.NormalizeDigits(FormOpeningBalanceText.Trim())
+                    .Replace('٫', '.')
+                    .Replace(',', '.');
+
+                if (!decimal.TryParse(normalizedDigits, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out openingBalance) || openingBalance < 0)
+                {
+                    SetStatus("الرصيد الافتتاحي يجب أن يكون رقماً صحيحاً (0 أو أكثر).", error: true);
+                    return;
+                }
             }
 
             try
             {
+                string savedName;
                 if (SelectedCustomer == null)
                 {
                     // ── إضافة جديد ────────────────────────────────────────────
                     var newCustomer = new CustomerModel
                     {
                         Name = FormName.Trim(),
-                        Phone = FormPhone.Trim(),
+                        Phone = normalizedPhone,
                         Address = FormAddress.Trim(),
                         Notes = FormNotes.Trim(),
                         OpeningBalance = openingBalance,
                         IsActive = FormIsActive
                     };
                     await _customerService.AddCustomerAsync(newCustomer);
-                    SetStatus($"تم حفظ العميل '{newCustomer.Name}' بنجاح.", error: false);
+                    savedName = newCustomer.Name;
                 }
                 else
                 {
                     // ── تعديل موجود ──────────────────────────────────────────
                     SelectedCustomer.Name = FormName.Trim();
-                    SelectedCustomer.Phone = FormPhone.Trim();
+                    SelectedCustomer.Phone = normalizedPhone;
                     SelectedCustomer.Address = FormAddress.Trim();
                     SelectedCustomer.Notes = FormNotes.Trim();
                     SelectedCustomer.OpeningBalance = openingBalance;
                     SelectedCustomer.IsActive = FormIsActive;
 
                     await _customerService.UpdateCustomerAsync(SelectedCustomer);
-                    SetStatus($"تم تحديث بيانات العميل '{SelectedCustomer.Name}' بنجاح.", error: false);
+                    savedName = SelectedCustomer.Name;
                 }
 
-                await LoadCustomersAsync();
-                ClearForm();
+                await LoadCustomersAsync(clearStatus: false);
+                ClearForm(clearStatus: false);
+                SetStatus($"تم حفظ بيانات العميل '{savedName}' بنجاح.", error: false);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    $"حدث خطأ أثناء حفظ بيانات العميل:\n{ex.Message}",
-                    "خطأ في الحفظ",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                SetStatus($"فشل حفظ بيانات العميل: {ex.Message}", error: true);
             }
         }
 
@@ -489,11 +554,13 @@ namespace CarPartManager.ViewModels
         // كشف الحساب
         // ══════════════════════════════════════════════════════════════════════
 
-        private async Task ExecuteShowStatementAsync()
+        private async Task ExecuteShowStatementAsync(object? param = null)
         {
-            if (SelectedCustomer == null) return;
+            var customer = param as CustomerModel ?? SelectedCustomer;
+            if (customer == null) return;
 
-            StatementCustomer = SelectedCustomer;
+            SelectedCustomer = customer;
+            StatementCustomer = customer;
             CurrentMode = ScreenMode.Statement;
             await LoadStatementAsync();
         }
@@ -512,6 +579,8 @@ namespace CarPartManager.ViewModels
 
                 StatementTotalDebit = StatementLines.Sum(l => l.DebitAmount);
                 StatementTotalCredit = StatementLines.Sum(l => l.CreditAmount);
+                StatementTotalSales = StatementLines.Where(l => l.EntryType != "دفعة استلام" && l.EntryType != "دفعة ملغاة").Sum(l => l.InvoiceTotal ?? l.DebitAmount);
+                StatementTotalPaid = StatementLines.Where(l => !l.IsCancelledPayment).Sum(l => (l.InvoicePaid ?? 0m) + l.CreditAmount);
                 StatementFinalBalance = StatementLines.Count > 0
                     ? StatementLines.Last().RunningBalance
                     : 0m;
@@ -525,14 +594,57 @@ namespace CarPartManager.ViewModels
             }
         }
 
+        private async Task ExecuteCancelPaymentAsync(object? param)
+        {
+            int paymentId = 0;
+            if (param is CustomerStatementLineModel line)
+            {
+                paymentId = line.SourceId;
+            }
+            else if (param is int id)
+            {
+                paymentId = id;
+            }
+
+            if (paymentId <= 0) return;
+
+            var confirm = MessageBox.Show(
+                "هل أنت متأكد من رغبتك في إلغاء هذه الدفعة؟\n\n" +
+                "تنبيه الأمان المالي والتاريخي:\n" +
+                "• لن يتم حذف السجل بل ستتغير حالته إلى (ملغاة) توثيقاً لكافة العمليات المالية.\n" +
+                "• سيتم عكس أثر الدفعة وإعادة المبلغ إلى الرصيد المستحق على العميل.",
+                "تأكيد إلغاء الدفعة",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (confirm != MessageBoxResult.Yes) return;
+
+            try
+            {
+                await _customerService.CancelPaymentAsync(paymentId, "إلغاء بناءً على طلب المستخدم");
+                SetStatus("تم إلغاء الدفعة بنجاح وتحديث كشف الحساب والرصيد.", error: false);
+                await LoadStatementAsync();
+                if (SelectedCustomer != null)
+                {
+                    SelectedCustomer.CurrentBalance = await _customerService.CalculateBalanceAsync(SelectedCustomer.Id);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"فشل إلغاء الدفعة:\n{ex.Message}", "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         // ══════════════════════════════════════════════════════════════════════
         // تسجيل الدفعة
         // ══════════════════════════════════════════════════════════════════════
 
-        private void ExecuteShowPayment()
+        private void ExecuteShowPayment(object? param = null)
         {
-            if (SelectedCustomer == null) return;
+            var customer = param as CustomerModel ?? SelectedCustomer;
+            if (customer == null) return;
 
+            SelectedCustomer = customer;
             PaymentAmountText = string.Empty;
             PaymentDate = DateTime.Now;
             PaymentMethod = "نقدي";
@@ -597,7 +709,7 @@ namespace CarPartManager.ViewModels
                 SelectedCustomer.CurrentBalance = await _customerService.CalculateBalanceAsync(SelectedCustomer.Id);
 
                 SetStatus($"تم تسجيل الدفعة بمبلغ {amount:N2} بنجاح.", error: false);
-                await LoadCustomersAsync();
+                await LoadCustomersAsync(clearStatus: false);
                 CurrentMode = ScreenMode.List;
             }
             catch (Exception ex)
@@ -614,6 +726,8 @@ namespace CarPartManager.ViewModels
         {
             IsStatusError = error;
             StatusMessage = message;
+            OnPropertyChanged(nameof(HasStatusMessage));
+            OnPropertyChanged(nameof(StatusColor));
         }
 
         /// <summary>

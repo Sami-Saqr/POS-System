@@ -109,5 +109,76 @@ namespace CarPartManager.Views
                 }
             }
         }
+
+        private void CustomerNameTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (DataContext is not SalesInvoicesViewModel vm) return;
+
+            if (e.Key == Key.Down)
+            {
+                if (vm.IsCustomerPopupOpen && vm.CustomerSuggestions.Count > 0)
+                {
+                    vm.SelectNextCustomerSuggestion();
+                    if (vm.SelectedCustomerSuggestion != null)
+                    {
+                        CustomerSuggestionsListBox?.ScrollIntoView(vm.SelectedCustomerSuggestion);
+                    }
+                    e.Handled = true;
+                }
+            }
+            else if (e.Key == Key.Up)
+            {
+                if (vm.IsCustomerPopupOpen && vm.CustomerSuggestions.Count > 0)
+                {
+                    vm.SelectPreviousCustomerSuggestion();
+                    if (vm.SelectedCustomerSuggestion != null)
+                    {
+                        CustomerSuggestionsListBox?.ScrollIntoView(vm.SelectedCustomerSuggestion);
+                    }
+                    e.Handled = true;
+                }
+            }
+            else if (e.Key == Key.Escape)
+            {
+                if (vm.IsCustomerPopupOpen)
+                {
+                    vm.CloseCustomerSuggestions();
+                    e.Handled = true;
+                    FocusBarcodeInput();
+                }
+            }
+            else if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+
+                var binding = CustomerNameTextBox.GetBindingExpression(TextBox.TextProperty);
+                binding?.UpdateSource();
+
+                if (vm.IsCustomerPopupOpen && vm.SelectedCustomerSuggestion != null)
+                {
+                    vm.SelectCustomerSuggestionCommand.Execute(vm.SelectedCustomerSuggestion);
+                }
+                else
+                {
+                    vm.CloseCustomerSuggestions();
+                }
+
+                FocusBarcodeInput();
+            }
+        }
+
+        private void CustomerSuggestionItem_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.DataContext is Models.CustomerModel customer)
+            {
+                if (DataContext is SalesInvoicesViewModel vm)
+                {
+                    vm.SelectCustomerSuggestionCommand.Execute(customer);
+                    FocusBarcodeInput();
+                    e.Handled = true;
+                }
+            }
+        }
     }
 }
+
