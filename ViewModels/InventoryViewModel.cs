@@ -3,6 +3,7 @@ using System.Windows;
 using CarPartManager.Models;
 using CarPartManager.MVVM;
 using CarPartManager.Services;
+using CarPartManager.Views;
 
 namespace CarPartManager.ViewModels
 {
@@ -476,66 +477,26 @@ namespace CarPartManager.ViewModels
         // Add these to the constructor after existing commands
         // For now, I'll add the command initialization in a separate edit
 
-        private void ExecuteCreateNewSession()
+        private async void ExecuteCreateNewSession()
         {
-            var dialog = new Window
+            var dialog = new CreateStocktakeSessionWindow
             {
-                Title = "إنشاء جلسة جرد جديدة",
-                Width = 400,
-                Height = 300,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = Application.Current.MainWindow
             };
 
-            var grid = new Grid { Margin = 20 };
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            if (dialog.ShowDialog() != true) return;
 
-            var nameBox = new TextBox { Margin = new Thickness(0, 10, 0, 10) };
-            var notesBox = new TextBox { Margin = new Thickness(0, 10, 0, 10), AcceptsReturn = true, Height = 60 };
-
-            grid.Children.Add(new TextBlock { Text = "اسم الجلسة:" }, 0, 0);
-            grid.Children.Add(nameBox, 1, 0);
-            grid.Children.Add(new TextBlock { Text = "ملاحظات:" }, 2, 0);
-            grid.Children.Add(notesBox, 3, 0);
-
-            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            var okBtn = new Button { Content = "إنشاء", Width = 100, Margin = new Thickness(5, 0, 5, 0) };
-            var cancelBtn = new Button { Content = "إلغاء", Width = 100, Margin = new Thickness(5, 0, 5, 0) };
-            btnPanel.Children.Add(okBtn);
-            btnPanel.Children.Add(cancelBtn);
-            grid.Children.Add(btnPanel, 4, 0);
-
-            dialog.Content = grid;
-
-            okBtn.Click += async (s, e) =>
+            try
             {
-                if (string.IsNullOrWhiteSpace(nameBox.Text))
-                {
-                    MessageBox.Show("يرجى إدخال اسم الجلسة.", "خطأ", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                try
-                {
-                    var session = await _stocktakeService.CreateSessionAsync(nameBox.Text, "كامل", null, notesBox.Text);
-                    CurrentSession = session;
-                    await LoadStocktakeLinesAsync();
-                    dialog.Close();
-                    StatusMessage = $"تم إنشاء جلسة الجرد {session.SessionNumber}";
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"فشل إنشاء الجلسة: {ex.Message}", "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            };
-
-            cancelBtn.Click += (s, e) => dialog.Close();
-
-            dialog.ShowDialog();
+                var session = await _stocktakeService.CreateSessionAsync(dialog.SessionName, "كامل", null, dialog.Notes);
+                CurrentSession = session;
+                await LoadStocktakeLinesAsync();
+                StatusMessage = $"تم إنشاء جلسة الجرد {session.SessionNumber}";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"فشل إنشاء الجلسة: {ex.Message}", "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private async Task LoadStocktakeHistoryAsync()
