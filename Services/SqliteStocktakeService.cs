@@ -197,15 +197,13 @@ namespace CarPartManager.Services
                     throw new InvalidOperationException("يمكن الاعتماد فقط من حالة المراجعة.");
                 }
 
-                // Check for movements after snapshot
-                bool hasMovementsAfterSnapshot = await HasMovementsAfterSnapshotAsync(sessionId);
-                if (hasMovementsAfterSnapshot)
-                {
-                    // We warn but proceed with snapshot-based adjustment
-                    // This is the safe approach: adjustment is based on snapshot book quantity
-                }
+                // الحركات المخزنية الوسيطة (مبيعات/مشتريات) تُعالَج الآن بشكل صحيح: يُحدّث الرصيد
+                // الدفتري للبند إلى الكمية الحيّة وقت العد، ويُطبَّق الفرق على الرصيد الحالي وقت
+                // الاعتماد، فتُحفظ المبيعات التي تتم بعد العد. HasMovementsAfterSnapshotAsync
+                // محتفظ بها كاستعلام استعلامي (معلومة فقط) — لا تنبيه ولا إجراء هنا.
+                // NewQuantity = CurrentQuantity + Difference (المبيعات بعد العد محفوظة).
 
-                // Process each line with a difference
+                // Process each counted line that has a difference
                 foreach (var line in session.Lines.Where(l => l.IsCounted && l.Difference != 0))
                 {
                     var product = await context.Products.FirstOrDefaultAsync(p => p.Id == line.ProductId)
@@ -216,7 +214,12 @@ namespace CarPartManager.Services
 
                     if (product.Quantity < 0)
                     {
-                        throw new InvalidOperationException($"الصنف '{product.Name}' سيصبح رصيده سالباً بعد التعديل.");
+                        // حراسة الرصيد السالب: إحباط الاعتماد كاملاً (ترجع المعاملة كلها) برسالة عربية
+                        // واضحة تسمّي الصنف ورصيده الحالي والمعدود والفرق، لإعادة العد.
+                        throw new InvalidOperationException(
+                            $"لا يمكن اعتماد الجرد للصنف '{product.Name}': الرصيد الحالي {previousQty}، " +
+                            $"الكمية المعدودة {line.CountedQuantity}، الفرق {line.Difference:+0;-0}، " +
+                            $"الرصيد بعد التعديل {product.Quantity} (سالب). يرجى إعادة العد أو معالجة الحركة المؤثرة ثم إعادة المحاولة.");
                     }
 
                     var movement = new InventoryMovementModel
@@ -357,7 +360,6 @@ namespace CarPartManager.Services
             using var context = CreateContext();
             var line = await context.StocktakeLines.FirstOrDefaultAsync(l => l.SessionId == sessionId && l.Barcode == barcode);
             if (line == null) return false;
-
             using var transaction = await context.Database.BeginTransactionAsync();
 
             var session = await context.StocktakeSessions.FirstOrDefaultAsync(s => s.Id == sessionId);
