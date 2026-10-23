@@ -505,7 +505,7 @@
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="الاسم" Binding="{Binding ProductName}" Width="2*" />
                                 <DataGridTextColumn Header="الباركود" Binding="{Binding Barcode}" Width="120" />
-                                <DataGridTextColumn Header="الرصيد الدفتري" Binding="{Binding BookQuantity}" Width="100" />
+                                <DataGridTextColumn Header="الرصيد وقت العد" Binding="{Binding BookQuantity}" Width="100" />
                                 <DataGridTextColumn Header="المعدود" Binding="{Binding CountedQuantity}" Width="80" />
                                 <DataGridTextColumn Header="الفرق" Binding="{Binding Difference, StringFormat='{}{0:+0;-0}'}" Width="70" />
                                 <DataGridTextColumn Header="قيمة الفرق" Binding="{Binding DifferenceValue, StringFormat='{}{0:N2}'}" Width="100" />
