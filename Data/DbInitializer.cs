@@ -538,6 +538,55 @@ namespace CarPartManager.Data
             {
                 System.Diagnostics.Debug.WriteLine($"[BackfillOpeningStockMovements] {ex.Message}");
             }
+
+            // ── ترحيل وحدة الجرد (AddStocktakeModule) ─────────────────────────────
+            await EnsureStocktakeTablesCreatedAsync(context);
+        }
+
+        private static async Task EnsureStocktakeTablesCreatedAsync(CarPartsDbContext context)
+        {
+            // إنشاء جدول جلسات الجرد إن لم يكن موجوداً
+            await context.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""StocktakeSessions"" (
+                    ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_StocktakeSessions"" PRIMARY KEY AUTOINCREMENT,
+                    ""SessionNumber"" TEXT NOT NULL,
+                    ""Name"" TEXT NOT NULL,
+                    ""Notes"" TEXT NULL,
+                    ""Status"" TEXT NOT NULL DEFAULT 'مسودة',
+                    ""SessionDate"" TEXT NOT NULL,
+                    ""StartDate"" TEXT NULL,
+                    ""ApprovedDate"" TEXT NULL,
+                    ""CancelledDate"" TEXT NULL,
+                    ""CancellationReason"" TEXT NULL,
+                    ""ScopeType"" TEXT NOT NULL DEFAULT 'كامل',
+                    ""ScopeFilter"" TEXT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS ""IX_StocktakeSessions_SessionNumber"" ON ""StocktakeSessions"" (""SessionNumber"");
+                CREATE INDEX IF NOT EXISTS ""IX_StocktakeSessions_Status"" ON ""StocktakeSessions"" (""Status"");
+                CREATE INDEX IF NOT EXISTS ""IX_StocktakeSessions_SessionDate"" ON ""StocktakeSessions"" (""SessionDate"");
+            ");
+
+            // إنشاء جدول بنود الجرد إن لم يكن موجوداً
+            await context.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""StocktakeLines"" (
+                    ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_StocktakeLines"" PRIMARY KEY AUTOINCREMENT,
+                    ""SessionId"" INTEGER NOT NULL,
+                    ""ProductId"" INTEGER NOT NULL,
+                    ""PartNumber"" TEXT NULL,
+                    ""ProductName"" TEXT NULL,
+                    ""Barcode"" TEXT NULL,
+                    ""Category"" TEXT NULL,
+                    ""BookQuantity"" INTEGER NOT NULL,
+                    ""CountedQuantity"" INTEGER NULL,
+                    ""CostPrice"" TEXT NOT NULL,
+                    ""Notes"" TEXT NULL,
+                    CONSTRAINT ""FK_StocktakeLines_StocktakeSessions_SessionId""
+                        FOREIGN KEY (""SessionId"") REFERENCES ""StocktakeSessions"" (""Id"") ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS ""IX_StocktakeLines_SessionId"" ON ""StocktakeLines"" (""SessionId"");
+                CREATE INDEX IF NOT EXISTS ""IX_StocktakeLines_ProductId"" ON ""StocktakeLines"" (""ProductId"");
+                CREATE INDEX IF NOT EXISTS ""IX_StocktakeLines_Barcode"" ON ""StocktakeLines"" (""Barcode"");
+            ");
         }
     }
 }

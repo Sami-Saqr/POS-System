@@ -4,11 +4,16 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:viewmodels="clr-namespace:CarPartManager.ViewModels"
+             xmlns:converters="clr-namespace:CarPartManager.Converters"
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=viewmodels:InventoryViewModel}"
              d:DesignHeight="750" d:DesignWidth="1100"
              FlowDirection="RightToLeft">
+
+    <UserControl.Resources>
+        <converters:NullToBoolConverter x:Key="NullToBoolConverter" />
+    </UserControl.Resources>
 
     <Grid Margin="28,24,28,28">
         <Grid.RowDefinitions>
@@ -356,6 +361,219 @@
                                     <TextBlock Text="فحص التطابق" FontWeight="Bold" FontSize="12" />
                                 </StackPanel>
                             </Button>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Tab 3: Stocktake -->
+            <TabItem Header="الجرد">
+                <Grid Margin="16,16,16,16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Session Header -->
+                    <Border Grid.Row="0" Background="#F8FAFC"
+                            BorderBrush="#E2E8F0"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16,12"
+                            Margin="0,0,0,16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="{Binding CurrentSession.SessionNumber, FallbackValue='لا توجد جلسة نشطة'}"
+                                           FontSize="16"
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                <TextBlock Text="{Binding CurrentSession.Name, FallbackValue='أنشئ جلسة جديدة للبدء'}"
+                                           FontSize="13"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,4,0,0" />
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Border Background="{Binding SessionStatusColor, FallbackValue='#64748B'}"
+                                            CornerRadius="4"
+                                            Padding="8,4"
+                                            Margin="0,0,8,0">
+                                        <TextBlock Text="{Binding SessionStatusText, FallbackValue='—'}"
+                                                   FontSize="11"
+                                                   FontWeight="Bold"
+                                                   Foreground="#FFFFFF" />
+                                    </Border>
+                                    <TextBlock Text="{Binding CurrentSession.StartDate, StringFormat='{}بدأ: {0:yyyy-MM-dd HH:mm}', FallbackValue=''}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Style="{StaticResource PrimaryButtonStyle}"
+                                        Command="{Binding CreateNewSessionCommand}"
+                                        IsEnabled="{Binding CanCreateNewSession}"
+                                        Height="32" Padding="12,0" Margin="0,0,8,0">
+                                    <TextBlock Text="جلسة جديدة" FontWeight="Bold" FontSize="12" />
+                                </Button>
+                                <Button Style="{StaticResource OutlineButtonStyle}"
+                                        Command="{Binding StartCountingCommand}"
+                                        Height="32" Padding="12,0" Margin="0,0,8,0">
+                                    <TextBlock Text="بدء العد" FontSize="12" />
+                                </Button>
+                                <Button Style="{StaticResource OutlineButtonStyle}"
+                                        Command="{Binding SubmitReviewCommand}"
+                                        Height="32" Padding="12,0" Margin="0,0,8,0">
+                                    <TextBlock Text="تقديم للمراجعة" FontSize="12" />
+                                </Button>
+                                <Button Style="{StaticResource PrimaryButtonStyle}"
+                                        Command="{Binding ApproveSessionCommand}"
+                                        Height="32" Padding="12,0" Margin="0,0,8,0">
+                                    <TextBlock Text="اعتماد" FontWeight="Bold" FontSize="12" />
+                                </Button>
+                                <Button Style="{StaticResource DangerButtonStyle}"
+                                        Command="{Binding CancelSessionCommand}"
+                                        Height="32" Padding="12,0">
+                                    <TextBlock Text="إلغاء" FontWeight="Bold" FontSize="12" />
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Counting Grid -->
+                    <Border Grid.Row="1" Background="{StaticResource CardBackgroundBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="16,12"
+                            Margin="0,0,0,16"
+                            Visibility="{Binding HasCurrentSession, Converter={StaticResource BoolToVisConverter}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="مسح الباركود:"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,12,0"
+                                       FontSize="13" />
+
+                            <TextBox Grid.Column="1"
+                                     Text="{Binding StocktakeSearch, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource StandardTextBoxStyle}"
+                                     BorderThickness="0"
+                                     FontSize="14"
+                                     VerticalContentAlignment="Center"
+                                     Margin="0,0,12,0"
+                                     Tag="امسح الباركود أو ابحث عن الصنف..." />
+
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                <TextBox Text="{Binding StocktakeCountQuantity}"
+                                         Width="80"
+                                         Height="32"
+                                         VerticalContentAlignment="Center"
+                                         TextAlignment="Center"
+                                         Margin="0,0,8,0"
+                                         FontSize="13"
+                                         Tag="الكمية" />
+                                <Button Style="{StaticResource PrimaryButtonStyle}"
+                                        Command="{Binding CountByBarcodeCommand}"
+                                        Height="32" Padding="12,0">
+                                    <TextBlock Text="تسجيل" FontWeight="Bold" FontSize="12" />
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Stocktake Lines Grid -->
+                    <Border Grid.Row="2" Style="{StaticResource ContentPanelCardStyle}" Padding="0"
+                            Visibility="{Binding HasCurrentSession, Converter={StaticResource BoolToVisConverter}}">
+                        <DataGrid Style="{StaticResource CleanDataGridStyle}"
+                                  ItemsSource="{Binding StocktakeLines}"
+                                  SelectedItem="{Binding SelectedStocktakeLine, Mode=TwoWay}"
+                                  RowHeight="42"
+                                  SelectionMode="Single">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="الاسم" Binding="{Binding ProductName}" Width="2*" />
+                                <DataGridTextColumn Header="الباركود" Binding="{Binding Barcode}" Width="120" />
+                                <DataGridTextColumn Header="الرصيد الدفتري" Binding="{Binding BookQuantity}" Width="100" />
+                                <DataGridTextColumn Header="المعدود" Binding="{Binding CountedQuantity}" Width="80" />
+                                <DataGridTextColumn Header="الفرق" Binding="{Binding Difference, StringFormat='{}{0:+0;-0}'}" Width="70" />
+                                <DataGridTextColumn Header="قيمة الفرق" Binding="{Binding DifferenceValue, StringFormat='{}{0:N2}'}" Width="100" />
+                                <DataGridTemplateColumn Header="الحالة" Width="100">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border CornerRadius="4" Padding="6,3" HorizontalAlignment="Left">
+                                                <TextBlock Text="{Binding DifferenceType}" FontSize="11" FontWeight="Bold" Foreground="{Binding DifferenceColor}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <!-- Stocktake History -->
+                    <Border Grid.Row="2" Style="{StaticResource ContentPanelCardStyle}" Padding="0" Margin="0,16,0,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Background="#F8FAFC"
+                                    BorderBrush="#E2E8F0"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="سجل جلسات الجرد"
+                                               FontSize="14"
+                                               FontWeight="Bold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" />
+
+                                    <Button Grid.Column="1"
+                                            Style="{StaticResource OutlineButtonStyle}"
+                                            Command="{Binding LoadSessionsCommand}"
+                                            Height="28" Padding="8,0">
+                                        <TextBlock Text="تحديث" FontSize="11" />
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                            <DataGrid Grid.Row="1"
+                                      Style="{StaticResource CleanDataGridStyle}"
+                                      ItemsSource="{Binding StocktakeHistory}"
+                                      RowHeight="40"
+                                      SelectionMode="Single">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="رقم الجلسة" Binding="{Binding SessionNumber}" Width="120" />
+                                    <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2*" />
+                                    <DataGridTextColumn Header="التاريخ" Binding="{Binding SessionDate, StringFormat='{}{0:yyyy-MM-dd}'}" Width="100" />
+                                    <DataGridTemplateColumn Header="الحالة" Width="100">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Border CornerRadius="4" Padding="6,3" HorizontalAlignment="Left">
+                                                    <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="Bold" Foreground="{Binding StatusColor}" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
                         </Grid>
                     </Border>
                 </Grid>

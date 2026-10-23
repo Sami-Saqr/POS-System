@@ -26,6 +26,10 @@ namespace CarPartManager.Data
         public DbSet<CustomerModel> Customers => Set<CustomerModel>();
         public DbSet<CustomerPaymentModel> CustomerPayments => Set<CustomerPaymentModel>();
 
+        // ── جداول الجرد (Stocktake Module) ─────────────────────────────────────
+        public DbSet<StocktakeSessionModel> StocktakeSessions => Set<StocktakeSessionModel>();
+        public DbSet<StocktakeLineModel> StocktakeLines => Set<StocktakeLineModel>();
+
         /// <summary>
         /// الحصول على المسار الآمن والدائم لملف قاعدة البيانات في LocalApplicationData
         /// لتجنب حفظها في bin/obj أو ربطها بمسار ثابت يحتوي اسم مستخدم محدد.
@@ -559,6 +563,86 @@ namespace CarPartManager.Data
                 entity.Ignore(i => i.MaxReturnableQuantity);
                 entity.Ignore(i => i.PurchaseReturn);
                 entity.Ignore(i => i.Product);
+            });
+
+            // 14. تكوين جدول جلسات الجرد (StocktakeSessions)
+            modelBuilder.Entity<StocktakeSessionModel>(entity =>
+            {
+                entity.ToTable("StocktakeSessions");
+
+                entity.HasKey(s => s.Id);
+                entity.Property(s => s.Id).ValueGeneratedOnAdd();
+
+                entity.Property(s => s.SessionNumber)
+                      .HasMaxLength(50)
+                      .IsRequired();
+                entity.HasIndex(s => s.SessionNumber).IsUnique();
+
+                entity.Property(s => s.Name)
+                      .HasMaxLength(200)
+                      .IsRequired();
+
+                entity.Property(s => s.Status)
+                      .HasMaxLength(30)
+                      .HasDefaultValue("مسودة");
+
+                entity.Property(s => s.Notes)
+                      .HasMaxLength(500);
+
+                entity.Property(s => s.ScopeType)
+                      .HasMaxLength(50)
+                      .HasDefaultValue("كامل");
+
+                entity.Property(s => s.ScopeFilter)
+                      .HasMaxLength(200);
+
+                entity.Property(s => s.CancellationReason)
+                      .HasMaxLength(500);
+
+                entity.Ignore(s => s.IsDraft);
+                entity.Ignore(s => s.IsCounting);
+                entity.Ignore(s => s.IsReview);
+                entity.Ignore(s => s.IsApproved);
+                entity.Ignore(s => s.IsCancelled);
+                entity.Ignore(s => s.StatusText);
+                entity.Ignore(s => s.StatusColor);
+            });
+
+            // 15. تكوين جدول بنود الجرد (StocktakeLines)
+            modelBuilder.Entity<StocktakeLineModel>(entity =>
+            {
+                entity.ToTable("StocktakeLines");
+
+                entity.HasKey(l => l.Id);
+                entity.Property(l => l.Id).ValueGeneratedOnAdd();
+
+                entity.Property(l => l.PartNumber)
+                      .HasMaxLength(100);
+
+                entity.Property(l => l.ProductName)
+                      .HasMaxLength(250);
+
+                entity.Property(l => l.Barcode)
+                      .HasMaxLength(100);
+
+                entity.Property(l => l.Category)
+                      .HasMaxLength(100);
+
+                entity.Property(l => l.CostPrice)
+                      .HasPrecision(18, 2);
+
+                entity.Property(l => l.Notes)
+                      .HasMaxLength(500);
+
+                entity.HasIndex(l => l.SessionId);
+                entity.HasIndex(l => l.ProductId);
+
+                entity.Ignore(l => l.IsCounted);
+                entity.Ignore(l => l.Difference);
+                entity.Ignore(l => l.DifferenceValue);
+                entity.Ignore(l => l.HasDifference);
+                entity.Ignore(l => l.DifferenceType);
+                entity.Ignore(l => l.DifferenceColor);
             });
         }
     }

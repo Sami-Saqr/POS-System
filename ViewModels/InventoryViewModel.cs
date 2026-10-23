@@ -13,6 +13,7 @@ namespace CarPartManager.ViewModels
     {
         private readonly IInventoryService _inventoryService;
         private readonly IProductService _productService;
+        private readonly IStocktakeService _stocktakeService;
 
         // Tab selection
         private int _selectedTabIndex = 0;
@@ -194,10 +195,11 @@ namespace CarPartManager.ViewModels
         public RelayCommand RecordAdjustmentCommand { get; }
         public RelayCommand CheckConsistencyCommand { get; }
 
-        public InventoryViewModel(IInventoryService? inventoryService = null, IProductService? productService = null)
+        public InventoryViewModel(IInventoryService? inventoryService = null, IProductService? productService = null, IStocktakeService? stocktakeService = null)
         {
             _inventoryService = inventoryService ?? new SqliteInventoryService();
             _productService = productService ?? new SqliteProductService();
+            _stocktakeService = stocktakeService ?? new SqliteStocktakeService();
 
             RefreshStockCommand = new RelayCommand(async () => await LoadStockOverviewAsync());
             FilterStockCommand = new RelayCommand(async () => await FilterStockProductsAsync());
@@ -207,6 +209,17 @@ namespace CarPartManager.ViewModels
             ClearMovementFilterCommand = new RelayCommand(ClearMovementFilter);
             RecordAdjustmentCommand = new RelayCommand(ExecuteRecordAdjustment, () => HasSelectedStockProduct);
             CheckConsistencyCommand = new RelayCommand(async () => await ExecuteCheckConsistencyAsync());
+
+            // Stocktake commands
+            CreateNewSessionCommand = new RelayCommand(ExecuteCreateNewSession);
+            LoadSessionsCommand = new RelayCommand(async () => await LoadStocktakeHistoryAsync());
+            StartCountingCommand = new RelayCommand(async () => await ExecuteStartCountingAsync(), () => HasCurrentSession && CurrentSession.IsDraft);
+            SubmitReviewCommand = new RelayCommand(async () => await ExecuteSubmitReviewAsync(), () => HasCurrentSession && CurrentSession.IsCounting);
+            ApproveSessionCommand = new RelayCommand(async () => await ExecuteApproveSessionAsync(), () => HasCurrentSession && CurrentSession.IsReview);
+            CancelSessionCommand = new RelayCommand(async () => await ExecuteCancelSessionAsync(), () => HasCurrentSession && !CurrentSession.IsApproved);
+            CountProductCommand = new RelayCommand(async () => await ExecuteCountProductAsync());
+            CountByBarcodeCommand = new RelayCommand(async () => await ExecuteCountByBarcodeAsync());
+            RefreshStocktakeCommand = new RelayCommand(async () => await RefreshStocktakeAsync());
 
             _ = LoadAllDataAsync();
         }
@@ -393,6 +406,318 @@ namespace CarPartManager.ViewModels
             {
                 IsCheckingConsistency = false;
             }
+        }
+
+        // Stocktake Session Management
+        private StocktakeSessionModel? _currentSession;
+        public StocktakeSessionModel? CurrentSession
+        {
+            get => _currentSession;
+            set
+            {
+                if (SetProperty(ref _currentSession, value))
+                {
+                    OnPropertyChanged(nameof(HasCurrentSession));
+                    OnPropertyChanged(nameof(CanCreateNewSession));
+                    OnPropertyChanged(nameof(SessionStatusText));
+                    OnPropertyChanged(nameof(SessionStatusColor));
+                }
+            }
+        }
+
+        public bool HasCurrentSession => _currentSession != null;
+        public bool CanCreateNewSession => _currentSession == null;
+
+        public string SessionStatusText => CurrentSession?.StatusText ?? string.Empty;
+        public string SessionStatusColor => CurrentSession?.StatusColor ?? "#64748B";
+
+        public ObservableCollection<StocktakeLineModel> StocktakeLines { get; } = new();
+        public ObservableCollection<StocktakeSessionModel> StocktakeHistory { get; } = new();
+
+        private StocktakeLineModel? _selectedStocktakeLine;
+        public StocktakeLineModel? SelectedStocktakeLine
+        {
+            get => _selectedStocktakeLine;
+            set => SetProperty(ref _selectedStocktakeLine, value);
+        }
+
+        private string _stocktakeSearch = string.Empty;
+        public string StocktakeSearch
+        {
+            get => _stocktakeSearch;
+            set => SetProperty(ref _stocktakeSearch, value);
+        }
+
+        private int _stocktakeCountQuantity;
+        public int StocktakeCountQuantity
+        {
+            get => _stocktakeCountQuantity;
+            set => SetProperty(ref _stocktakeCountQuantity, value);
+        }
+
+        private string _stocktakeCountNotes = string.Empty;
+        public string StocktakeCountNotes
+        {
+            get => _stocktakeCountNotes;
+            set => SetProperty(ref _stocktakeCountNotes, value);
+        }
+
+        // Stocktake Commands
+        public RelayCommand CreateNewSessionCommand { get; }
+        public RelayCommand LoadSessionsCommand { get; }
+        public RelayCommand StartCountingCommand { get; }
+        public RelayCommand SubmitReviewCommand { get; }
+        public RelayCommand ApproveSessionCommand { get; }
+        public RelayCommand CancelSessionCommand { get; }
+        public RelayCommand CountProductCommand { get; }
+        public RelayCommand CountByBarcodeCommand { get; }
+        public RelayCommand RefreshStocktakeCommand { get; }
+
+        // Add these to the constructor after existing commands
+        // For now, I'll add the command initialization in a separate edit
+
+        private void ExecuteCreateNewSession()
+        {
+            var dialog = new Window
+            {
+                Title = "إنشاء جلسة جرد جديدة",
+                Width = 400,
+                Height = 300,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Application.Current.MainWindow
+            };
+
+            var grid = new Grid { Margin = 20 };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var nameBox = new TextBox { Margin = new Thickness(0, 10, 0, 10) };
+            var notesBox = new TextBox { Margin = new Thickness(0, 10, 0, 10), AcceptsReturn = true, Height = 60 };
+
+            grid.Children.Add(new TextBlock { Text = "اسم الجلسة:" }, 0, 0);
+            grid.Children.Add(nameBox, 1, 0);
+            grid.Children.Add(new TextBlock { Text = "ملاحظات:" }, 2, 0);
+            grid.Children.Add(notesBox, 3, 0);
+
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var okBtn = new Button { Content = "إنشاء", Width = 100, Margin = new Thickness(5, 0, 5, 0) };
+            var cancelBtn = new Button { Content = "إلغاء", Width = 100, Margin = new Thickness(5, 0, 5, 0) };
+            btnPanel.Children.Add(okBtn);
+            btnPanel.Children.Add(cancelBtn);
+            grid.Children.Add(btnPanel, 4, 0);
+
+            dialog.Content = grid;
+
+            okBtn.Click += async (s, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(nameBox.Text))
+                {
+                    MessageBox.Show("يرجى إدخال اسم الجلسة.", "خطأ", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                try
+                {
+                    var session = await _stocktakeService.CreateSessionAsync(nameBox.Text, "كامل", null, notesBox.Text);
+                    CurrentSession = session;
+                    await LoadStocktakeLinesAsync();
+                    dialog.Close();
+                    StatusMessage = $"تم إنشاء جلسة الجرد {session.SessionNumber}";
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"فشل إنشاء الجلسة: {ex.Message}", "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+
+            cancelBtn.Click += (s, e) => dialog.Close();
+
+            dialog.ShowDialog();
+        }
+
+        private async Task LoadStocktakeHistoryAsync()
+        {
+            try
+            {
+                var sessions = await _stocktakeService.GetAllSessionsAsync();
+                StocktakeHistory.Clear();
+                foreach (var s in sessions)
+                {
+                    StocktakeHistory.Add(s);
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"خطأ في تحميل سجل الجرد: {ex.Message}";
+            }
+        }
+
+        private async Task LoadStocktakeLinesAsync()
+        {
+            if (CurrentSession == null) return;
+
+            try
+            {
+                var lines = await _stocktakeService.GetLinesAsync(CurrentSession.Id);
+                StocktakeLines.Clear();
+                foreach (var l in lines)
+                {
+                    StocktakeLines.Add(l);
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"خطأ في تحميل بنود الجرد: {ex.Message}";
+            }
+        }
+
+        private async Task ExecuteStartCountingAsync()
+        {
+            if (CurrentSession == null) return;
+
+            try
+            {
+                await _stocktakeService.StartCountingAsync(CurrentSession.Id);
+                CurrentSession = await _stocktakeService.GetSessionByIdAsync(CurrentSession.Id);
+                StatusMessage = "بدء العد - يمكنك الآن إدخال الكميات المعدودة";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"فشل بدء العد: {ex.Message}", "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task ExecuteSubmitReviewAsync()
+        {
+            if (CurrentSession == null) return;
+
+            try
+            {
+                await _stocktakeService.SubmitForReviewAsync(CurrentSession.Id);
+                CurrentSession = await _stocktakeService.GetSessionByIdAsync(CurrentSession.Id);
+                StatusMessage = "تم تقديم الجرد للمراجعة";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"فشل التقديم للمراجعة: {ex.Message}", "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task ExecuteApproveSessionAsync()
+        {
+            if (CurrentSession == null) return;
+
+            var summary = await _stocktakeService.GetSessionSummaryAsync(CurrentSession.Id);
+
+            var message = $"هل أنت متأكد من اعتماد جلسة الجرد {CurrentSession.SessionNumber}؟\n\n" +
+                         $"البنود المعدودة: {summary.CountedLines}/{summary.TotalLines}\n" +
+                         $"بنود مع اختلاف: {summary.LinesWithDifference}\n" +
+                         $"إجمالي النقص: {summary.TotalShortage} (قيمة: {summary.ShortageValue:N2})\n" +
+                         $"إجمالي الفائض: {summary.TotalSurplus} (قيمة: {summary.SurplusValue:N2})";
+
+            var result = MessageBox.Show(message, "تأكيد الاعتماد", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes) return;
+
+            try
+            {
+                await _stocktakeService.ApproveSessionAsync(CurrentSession.Id);
+                CurrentSession = await _stocktakeService.GetSessionByIdAsync(CurrentSession.Id);
+                await LoadStockOverviewAsync(); // Refresh stock
+                StatusMessage = "تم اعتماد جلسة الجرد بنجاح";
+                MessageBox.Show("تم اعتماد جلسة الجرد بنجاح.", "نجاح", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"فشل الاعتماد: {ex.Message}", "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task ExecuteCancelSessionAsync()
+        {
+            if (CurrentSession == null) return;
+
+            var result = MessageBox.Show("هل أنت متأكد من إلغاء جلسة الجرد؟", "تأكيد الإلغاء", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes) return;
+
+            try
+            {
+                await _stocktakeService.CancelSessionAsync(CurrentSession.Id, "إلغاء من قبل المستخدم");
+                CurrentSession = null;
+                StocktakeLines.Clear();
+                StatusMessage = "تم إلغاء جلسة الجرد";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"فشل الإلغاء: {ex.Message}", "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task ExecuteCountProductAsync()
+        {
+            if (CurrentSession == null || SelectedStocktakeLine == null) return;
+
+            if (StocktakeCountQuantity < 0)
+            {
+                MessageBox.Show("الكمية لا يمكن أن تكون سالبة.", "خطأ", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                await _stocktakeService.CountProductAsync(CurrentSession.Id, SelectedStocktakeLine.ProductId, StocktakeCountQuantity, StocktakeCountNotes);
+                await LoadStocktakeLinesAsync();
+                StocktakeCountQuantity = 0;
+                StocktakeCountNotes = string.Empty;
+                StatusMessage = "تم تسجيل العد";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"فشل تسجيل العد: {ex.Message}", "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task ExecuteCountByBarcodeAsync()
+        {
+            if (CurrentSession == null || string.IsNullOrWhiteSpace(StocktakeSearch)) return;
+
+            if (StocktakeCountQuantity < 0)
+            {
+                MessageBox.Show("الكمية لا يمكن أن تكون سالبة.", "خطأ", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                var success = await _stocktakeService.CountByBarcodeAsync(CurrentSession.Id, StocktakeSearch, StocktakeCountQuantity, StocktakeCountNotes);
+                if (!success)
+                {
+                    MessageBox.Show("الباركود غير موجود في هذه الجلسة.", "خطأ", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                await LoadStocktakeLinesAsync();
+                StocktakeCountQuantity = 0;
+                StocktakeCountNotes = string.Empty;
+                StocktakeSearch = string.Empty;
+                StatusMessage = "تم تسجيل العد بالباركود";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"فشل تسجيل العد: {ex.Message}", "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task RefreshStocktakeAsync()
+        {
+            if (CurrentSession != null)
+            {
+                CurrentSession = await _stocktakeService.GetSessionByIdAsync(CurrentSession.Id);
+                await LoadStocktakeLinesAsync();
+            }
+            await LoadStocktakeHistoryAsync();
         }
     }
 }
