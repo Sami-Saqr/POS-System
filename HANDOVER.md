@@ -1,16 +1,39 @@
 # CarPartManager - Handover Document
 
 ## Status
-**Date:** 2026-10-23
-**Task:** Implement "المخزون والجرد" (Inventory & Stocktake) Screen - Part 1
-**Status:** ✅ COMPLETED
+**Date:** 2026-10-23 (updated for Part 2)
+**Branch:** `wip-inventory`
+**Task:** "المخزون والجرد" (Inventory & Stocktake) Screen — Part 1 + Part 2
+**Status:** ✅ Part 1 (Stock Overview + Movements) on `main`. ✅ Part 2 (Stocktake) implemented on `wip-inventory`; **build succeeds, 0 errors** (8 warnings = 4 pre-existing `CS8602` in `InventoryViewModel.cs` 217–220, deferred). Not yet runtime-tested (no `.db` touched).
 
 ## Overview
-Implemented the Inventory screen with two tabs:
+The Inventory screen has three tabs:
 1. **Stock Overview** - Summary cards + DataGrid with real-time search and filters
 2. **Stock Movements** - Append-only ledger with manual adjustment and consistency check
+3. **Stocktake (الجرد)** - Session lifecycle + counting + approval (Part 2, see below)
 
-Stocktake functionality reserved for future task (not implemented yet).
+## Part 2: Stocktake (الجرد) — branch `wip-inventory`
+Implemented on `wip-inventory` on top of Part 1. Build: succeeded, 0 errors.
+
+### What was implemented
+- **Models:** `StocktakeSessionModel` (lifecycle مسودة→جاري العد→مراجعة→معتمد/ملغاة, scope, dates) + `StocktakeLineModel` (BookQuantity snapshot, CountedQuantity, CostPrice, computed Difference/DifferenceValue/DifferenceType). `Lines` navigation (`List<StocktakeLineModel>`) added on the session.
+- **Service:** `IStocktakeService` + `SqliteStocktakeService` — CreateSession (full/category scope, snapshots book qty), StartCounting, SubmitForReview, ApproveSession, CancelSession, GetLines, GetLineByProduct/Barcode, UpdateLine, CountProduct, CountByBarcode, HasMovementsAfterSnapshot, GetSessionSummary.
+- **Approval rules (verified by code review):** single DB transaction; status must be `مراجعة` (can't approve twice); per counted line with a difference → `product.Quantity += Difference` + an append-only `تعديل جرد` `InventoryMovementModel`; negative-stock guard throws + rolls back; `DataEvents.RaiseInventoryOrInvoicesChanged()` after commit.
+- **UI:** Stocktake tab in `InventoryView.xaml` (session header + action buttons, barcode-count row, lines DataGrid, history DataGrid) + new `CreateStocktakeSessionWindow` dialog (XAML + code-behind) — moved out of the ViewModel (no WPF controls in the ViewModel).
+- **DbContext:** `StocktakeSessions`/`StocktakeLines` DbSets + `OnModelCreating` config; `HasMany(s => s.Lines).WithOne().HasForeignKey(l => l.SessionId).OnDelete(Cascade)` added so `Include(s => s.Lines)` maps to the real `SessionId` column (was missing → would have used a shadow FK).
+- **Schema:** tables via `DbInitializer.EnsureStocktakeTablesCreatedAsync` (idempotent `CREATE TABLE IF NOT EXISTS`); `StocktakeLines.SessionId` + FK `ON DELETE CASCADE` already present. No EF Core migration (project uses `EnsureCreated` + raw DDL, not EF migrations).
+
+### Build-fix history (commits on wip-inventory)
+- `01b3f1f` — WIP: agent stopped mid-task (quota), unverified (interrupted stocktake work; did NOT compile — 15 errors)
+- `5d0bb56` — Step 1: moved session-creation dialog out of ViewModel into `CreateStocktakeSessionWindow` XAML (fixed 14 errors)
+- `df4022e` — Step 2: added `Lines` navigation to `StocktakeSessionModel` (fixed the 15th build error)
+- `ec393ac` — Step 2 (complete): configured `StocktakeSession.Lines` EF relationship in `CarPartsDbContext` (fixes runtime `Include`; schema-neutral)
+
+### SQLite database path (for testing)
+`CarPartsDbContext.GetDatabaseFilePath()` → `%LOCALAPPDATA%\CarPartManager\carparts.db` (`C:\Users\samys\AppData\Local\CarPartManager\carparts.db`), opened in `OnConfiguring` via `UseSqlite("Data Source={path}")`. To test against a copy: copy the `.db` elsewhere and temporarily repoint the path. Do not run against the live DB.
+
+### Test project
+None exists (single `CarPartManager.csproj`, WinExe). The requested EF tests (in-memory SQLite) could not be added without creating a test project + new packages (test SDK/framework) — forbidden. Not added.
 
 ## Findings
 
@@ -198,13 +221,17 @@ Modified:
 - No EF Core migration file (table already exists)
 - No existing quantity-changing logic altered (only added movement recording)
 - No negative stock allowance (pre-existing validation kept)
-- No stocktake functionality (reserved for future task)
+- No stocktake functionality in Part 1 scope (now implemented in Part 2, see above)
 - No location/warehouse columns (designed for future extensibility)
 
 ## Remaining TODO
-1. **Stocktake Tab** - Implement full stocktake with count entry, discrepancy tracking, and approval workflow (future task)
-2. **Stagnant Stock Filter** - Add filter for products with no sales in N days (requires last-sale-date tracking, skipped as optional)
-3. **Paging/Virtualization** - Consider for movements grid if dataset grows large (not needed for current scale)
+1. **Stocktake Tab** — ✅ DONE (Part 2, above). Open follow-ups:
+   - **`ApproveSessionAsync` snapshot-vs-current bug:** approval does `product.Quantity += (CountedQuantity − BookQuantity)`, where `BookQuantity` is the frozen snapshot but `product.Quantity` is the CURRENT live quantity. If sales/purchases occurred after the snapshot, the net interim movement is effectively double-counted (final = current + counted − book = counted + net-interim), so the approved quantity drifts from the physical count. `HasMovementsAfterSnapshotAsync` only warns (no block/recompute). Likely fix: set `product.Quantity = CountedQuantity` (count authoritative) and log the discrepancy separately.
+   - **Negative-stock guard can block a legitimate shortage:** because the snapshot-delta is applied to the already-reduced current quantity, a real shortage can push current below 0 → throw + rollback the whole approval, so the shortage is never recorded. Fixing the snapshot-vs-current bug above should resolve this.
+   - **Runtime test coverage:** no automated tests for the stocktake flow (see "Test project" above). Future: add a test project (new packages) with in-memory SQLite covering `Include(Lines)` via SessionId, approval movements/quantities, double-approve blocked, uncounted lines untouched, consistency check after approval.
+2. **CS8602 warnings** — 4 pre-existing null-deref warnings in `InventoryViewModel.cs` (217–220), explicitly deferred (out of scope).
+3. **Stagnant Stock Filter** - Add filter for products with no sales in N days (requires last-sale-date tracking, skipped as optional)
+4. **Paging/Virtualization** - Consider for movements grid if dataset grows large (not needed for current scale)
 
 ## Notes
 - App allows negative stock for **cancelled purchases** only (reversal validation prevents going negative if stock was already sold)
