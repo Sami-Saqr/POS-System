@@ -324,6 +324,8 @@ namespace CarPartManager.Services
             var line = await context.StocktakeLines.FirstOrDefaultAsync(l => l.SessionId == sessionId && l.ProductId == productId);
             if (line == null) return false;
 
+            using var transaction = await context.Database.BeginTransactionAsync();
+
             var session = await context.StocktakeSessions.FirstOrDefaultAsync(s => s.Id == sessionId);
             if (session == null || session.Status == "معتمد" || session.Status == "ملغاة")
             {
@@ -335,10 +337,18 @@ namespace CarPartManager.Services
                 throw new InvalidOperationException("الكمية المعدودة لا يمكن أن تكون سالبة.");
             }
 
+            // حدّث الرصيد الدفتري للبند إلى الكمية الحالية للصنف في لحظة العد ضمن نفس عملية الحفظ،
+            // فيُحسب الفرق (المعدود - الرصيد الدفتري) مقابل الرصيد الحي وقت العد وليس لقطة الإنشاء.
+            // إعادة العد تنعش القيمة مرة أخرى. البنود غير المعدودة (CountedQuantity = null) لا تُمسّ.
+            var product = await context.Products.FirstOrDefaultAsync(p => p.Id == productId)
+                ?? throw new InvalidOperationException($"الصنف رقم {productId} غير موجود.");
+
+            line.BookQuantity = product.Quantity;
             line.CountedQuantity = countedQuantity;
             line.Notes = notes ?? string.Empty;
 
             await context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return true;
         }
 
@@ -348,6 +358,8 @@ namespace CarPartManager.Services
             var line = await context.StocktakeLines.FirstOrDefaultAsync(l => l.SessionId == sessionId && l.Barcode == barcode);
             if (line == null) return false;
 
+            using var transaction = await context.Database.BeginTransactionAsync();
+
             var session = await context.StocktakeSessions.FirstOrDefaultAsync(s => s.Id == sessionId);
             if (session == null || session.Status == "معتمد" || session.Status == "ملغاة")
             {
@@ -359,10 +371,16 @@ namespace CarPartManager.Services
                 throw new InvalidOperationException("الكمية المعدودة لا يمكن أن تكون سالبة.");
             }
 
+            // حدّث الرصيد الدفتري للبند إلى الكمية الحالية للصنف في لحظة العد ضمن نفس عملية الحفظ.
+            var product = await context.Products.FirstOrDefaultAsync(p => p.Id == line.ProductId)
+                ?? throw new InvalidOperationException($"الصنف رقم {line.ProductId} غير موجود.");
+
+            line.BookQuantity = product.Quantity;
             line.CountedQuantity = countedQuantity;
             line.Notes = notes ?? string.Empty;
 
             await context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return true;
         }
 
