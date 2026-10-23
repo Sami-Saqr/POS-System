@@ -103,6 +103,11 @@ namespace CarPartManager.Models
             set => SetProperty(ref _scopeFilter, value);
         }
 
+        /// <summary>
+        /// بنود الجرد المرتبطة بالجلسة (علاقة رأس بأطراف مع StocktakeLineModel عبر المفتاح SessionId).
+        /// </summary>
+        public List<StocktakeLineModel> Lines { get; set; } = new();
+
         // Computed properties
         public bool IsDraft => Status == "مسودة";
         public bool IsCounting => Status == "جاري العد";
