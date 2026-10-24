@@ -22,6 +22,7 @@ namespace CarPartManager.Services
         private const string WalkInCustomer = "عميل نقدي";
         private const string UnknownProduct = "صنف غير معروف";
         private const string UnknownCategory = "تصنيف غير معروف";
+        private const string UnknownSupplier = "مورد غير معروف";
 
         private static CarPartsDbContext CreateContext() => new CarPartsDbContext();
 
@@ -413,6 +414,399 @@ namespace CarPartManager.Services
             {
                 throw new InvalidOperationException($"تعذر إنشاء تقرير المصروفات: {ex.Message}", ex);
             }
+        }
+
+        // ── تقرير المشتريات ───────────────────────────────────────────────────
+
+        public async Task<PurchaseReportModel> GetPurchasesReportAsync(DateTime fromInclusive, DateTime toExclusive, bool includePreviousComparison = true, int topProducts = 10)
+        {
+            try
+            {
+                if (topProducts <= 0) topProducts = 10;
+
+                using var context = CreateContext();
+
+                // الفواتير المعتمدة فقط — المسودة والملغاة مستبعدة من كل الأرقام
+                var invoices = await context.PurchaseInvoices.AsNoTracking()
+                    .Where(p => p.Status == PostedStatus && p.InvoiceDate >= fromInclusive && p.InvoiceDate < toExclusive)
+                    .Select(p => new { p.InvoiceDate, p.SupplierId, p.SupplierName, p.TotalAmount })
+                    .ToListAsync();
+
+                var total = invoices.Sum(x => x.TotalAmount);
+
+                var daily = invoices
+                    .GroupBy(x => x.InvoiceDate.Date)
+                    .Select(g => new PurchaseDailyReportRow
+                    {
+                        Day = g.Key,
+                        InvoiceCount = g.Count(),
+                        Total = g.Sum(x => x.TotalAmount)
+                    })
+                    .OrderBy(r => r.Day)
+                    .ToList();
+
+                var bySupplier = invoices
+                    .GroupBy(x => string.IsNullOrWhiteSpace(x.SupplierName) ? UnknownSupplier : x.SupplierName!.Trim())
+                    .Select(g =>
+                    {
+                        var supplierTotal = g.Sum(x => x.TotalAmount);
+                        return new SupplierPurchaseReportRow
+                        {
+                            SupplierName = g.Key,
+                            InvoiceCount = g.Count(),
+                            Total = supplierTotal,
+                            SharePercent = total == 0m ? 0m : Math.Round(supplierTotal / total * 100m, 1)
+                        };
+                    })
+                    .OrderByDescending(r => r.Total)
+                    .ThenBy(r => r.SupplierName)
+                    .ToList();
+
+                var lines = await (from item in context.PurchaseInvoiceItems
+                                   join invoice in context.PurchaseInvoices on item.PurchaseInvoiceId equals invoice.Id
+                                   where invoice.Status == PostedStatus
+                                         && invoice.InvoiceDate >= fromInclusive && invoice.InvoiceDate < toExclusive
+                                   select new { item.ProductId, item.ProductName, item.Quantity, item.UnitPrice })
+                                  .AsNoTracking()
+                                  .ToListAsync();
+
+                var top = lines
+                    .GroupBy(x => x.ProductId)
+                    .Select(g => new TopProductReportRow
+                    {
+                        ProductId = g.Key,
+                        ProductName = g.Select(x => x.ProductName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? UnknownProduct,
+                        QuantitySold = g.Sum(x => x.Quantity),
+                        SalesValue = g.Sum(x => x.Quantity * x.UnitPrice)
+                    })
+                    .OrderByDescending(r => r.SalesValue)
+                    .ThenBy(r => r.ProductId)
+                    .Take(topProducts)
+                    .ToList();
+
+                decimal? previousTotal = null;
+                if (includePreviousComparison)
+                {
+                    var length = toExclusive - fromInclusive;
+                    if (length > TimeSpan.Zero)
+                    {
+                        var previousAmounts = await context.PurchaseInvoices.AsNoTracking()
+                            .Where(p => p.Status == PostedStatus && p.InvoiceDate >= fromInclusive - length && p.InvoiceDate < fromInclusive)
+                            .Select(p => p.TotalAmount)
+                            .ToListAsync();
+
+                        previousTotal = previousAmounts.Sum();
+                    }
+                }
+
+                return new PurchaseReportModel
+                {
+                    PeriodStart = fromInclusive,
+                    PeriodEndExclusive = toExclusive,
+                    Total = total,
+                    InvoiceCount = invoices.Count,
+                    Daily = daily,
+                    BySupplier = bySupplier,
+                    TopProducts = top,
+                    HasSupplierData = invoices.Any(x => x.SupplierId.HasValue || !string.IsNullOrWhiteSpace(x.SupplierName)),
+                    PreviousTotal = previousTotal
+                };
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"تعذر إنشاء تقرير المشتريات: {ex.Message}", ex);
+            }
+        }
+
+        // ── تقييم المخزون (الحالة الحالية) ────────────────────────────────────
+
+        public async Task<InventoryValuationModel> GetInventoryValuationAsync(int stagnantDays = 60, int topByValue = 10)
+        {
+            try
+            {
+                if (stagnantDays <= 0) stagnantDays = 60;
+                if (topByValue <= 0) topByValue = 10;
+
+                using var context = CreateContext();
+
+                // أعمدة مسقطة فقط — بدون تحميل كيانات متعقَّبة
+                var products = await context.Products.AsNoTracking()
+                    .Select(p => new { p.Id, p.Name, p.Barcode, p.Category, p.Quantity, p.DamagedQuantity, p.MinimumStock, p.PurchasePrice })
+                    .ToListAsync();
+
+                // آخر تاريخ بيع معتمد لكل صنف — التجميع داخل قاعدة البيانات
+                var lastSales = await context.SalesInvoiceItems.AsNoTracking()
+                    .Join(context.SalesInvoices.AsNoTracking(),
+                          item => item.SalesInvoiceId,
+                          invoice => invoice.Id,
+                          (item, invoice) => new { item.ProductId, invoice.InvoiceDate, invoice.Status })
+                    .Where(x => x.Status == PostedStatus)
+                    .GroupBy(x => x.ProductId)
+                    .Select(g => new { ProductId = g.Key, LastSale = g.Max(x => x.InvoiceDate) })
+                    .ToListAsync();
+
+                var lastSaleById = lastSales.ToDictionary(x => x.ProductId, x => x.LastSale);
+                var cutoff = DateTime.Today.AddDays(-stagnantDays);
+
+                var rows = products
+                    .Select(p =>
+                    {
+                        var hasLastSale = lastSaleById.TryGetValue(p.Id, out var lastSale);
+                        return new InventoryValuationRow
+                        {
+                            ProductId = p.Id,
+                            ProductName = p.Name,
+                            Barcode = p.Barcode,
+                            Category = p.Category,
+                            Quantity = p.Quantity,
+                            DamagedQuantity = p.DamagedQuantity,
+                            MinimumStock = p.MinimumStock,
+                            CostPrice = p.PurchasePrice,
+                            LastSaleDate = hasLastSale ? lastSale : null
+                        };
+                    })
+                    .OrderByDescending(r => r.StockValue)
+                    .ThenBy(r => r.ProductId)
+                    .ToList();
+
+                var lowStock = rows.Where(r => r.Quantity > 0 && r.Quantity <= r.MinimumStock).ToList();
+                var outOfStock = rows.Where(r => r.Quantity <= 0).ToList();
+
+                // راكد = عليه رصيد متاح ولا مبيعات معتمدة خلال عدد الأيام المحدد
+                var stagnant = rows
+                    .Where(r => r.Quantity > 0 && (!r.LastSaleDate.HasValue || r.LastSaleDate.Value < cutoff))
+                    .OrderBy(r => r.LastSaleDate ?? DateTime.MinValue)
+                    .ThenBy(r => r.ProductId)
+                    .ToList();
+
+                return new InventoryValuationModel
+                {
+                    GeneratedAt = DateTime.Now,
+                    StagnantDays = stagnantDays,
+                    // قيمة المخزون = مجموع (الكمية المتاحة × سعر التكلفة الحالي) — تُحسب هنا وبالضبط كما في بطاقة الإجمالي
+                    TotalValue = rows.Sum(r => r.StockValue),
+                    DamagedValue = rows.Sum(r => r.DamagedQuantity * r.CostPrice),
+                    ProductCount = rows.Count,
+                    LowStockCount = lowStock.Count,
+                    OutOfStockCount = outOfStock.Count,
+                    StagnantCount = stagnant.Count,
+                    Rows = rows,
+                    LowStock = lowStock,
+                    OutOfStock = outOfStock,
+                    Stagnant = stagnant,
+                    TopByValue = rows.Take(topByValue).ToList()
+                };
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"تعذر إنشاء تقييم المخزون: {ex.Message}", ex);
+            }
+        }
+
+        // ── مديونيات العملاء (الحالة الحالية) ─────────────────────────────────
+
+        public async Task<CustomerDebtReportModel> GetCustomerDebtsAsync()
+        {
+            try
+            {
+                // إعادة استخدام خدمة العملاء — نفس صيغة الرصيد المستخدمة في شاشة العملاء (بدون إعادة تنفيذها)
+                var customerService = new SqliteCustomerService();
+                var customers = (await customerService.GetAllCustomersAsync()).ToList();
+
+                var debtors = customers.Where(c => c.CurrentBalance > 0m).ToList();
+                var debtorIds = debtors.Select(c => c.Id).ToList();
+
+                var lastPayments = new Dictionary<int, DateTime>();
+                var oldestUnpaid = new Dictionary<int, DateTime>();
+
+                if (debtorIds.Count > 0)
+                {
+                    using var context = CreateContext();
+
+                    var paymentRows = await context.CustomerPayments.AsNoTracking()
+                        .Where(p => !p.IsCancelled && debtorIds.Contains(p.CustomerId))
+                        .GroupBy(p => p.CustomerId)
+                        .Select(g => new { CustomerId = g.Key, LastPayment = g.Max(x => x.PaymentDate) })
+                        .ToListAsync();
+
+                    lastPayments = paymentRows.ToDictionary(x => x.CustomerId, x => x.LastPayment);
+
+                    // تُجلب الأعمدة فقط ثم تُقارن المبالغ في الذاكرة، لأن SQLite يخزّن decimal كنص
+                    // فمقارنة الأرقام داخل استعلام SQL قد تكون غير دقيقة.
+                    var invoiceRows = await context.SalesInvoices.AsNoTracking()
+                        .Where(i => i.Status == PostedStatus && i.CustomerId != null && debtorIds.Contains(i.CustomerId.Value))
+                        .Select(i => new { CustomerId = i.CustomerId!.Value, i.InvoiceDate, i.GrandTotal, i.PaidAmount })
+                        .ToListAsync();
+
+                    oldestUnpaid = invoiceRows
+                        .Where(i => i.GrandTotal > i.PaidAmount)
+                        .GroupBy(i => i.CustomerId)
+                        .ToDictionary(g => g.Key, g => g.Min(i => i.InvoiceDate));
+                }
+
+                var rows = debtors
+                    .Select(c => new CustomerDebtRow
+                    {
+                        CustomerId = c.Id,
+                        CustomerName = c.Name,
+                        Phone = c.Phone,
+                        Balance = c.CurrentBalance,
+                        LastPaymentDate = lastPayments.TryGetValue(c.Id, out var lastPayment) ? lastPayment : null,
+                        OldestUnpaidInvoiceDate = oldestUnpaid.TryGetValue(c.Id, out var oldest) ? oldest : null
+                    })
+                    .OrderByDescending(r => r.Balance)
+                    .ThenBy(r => r.CustomerName)
+                    .ToList();
+
+                return new CustomerDebtReportModel
+                {
+                    TotalDebt = rows.Sum(r => r.Balance),
+                    CustomerCount = rows.Count,
+                    TotalCustomers = customers.Count,
+                    Rows = rows
+                };
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"تعذر إنشاء تقرير مديونيات العملاء: {ex.Message}", ex);
+            }
+        }
+
+        // ── ربحية الأصناف ─────────────────────────────────────────────────────
+
+        public async Task<ItemProfitabilityModel> GetItemProfitabilityAsync(DateTime fromInclusive, DateTime toExclusive, int topCount = 10)
+        {
+            try
+            {
+                if (topCount <= 0) topCount = 10;
+
+                using var context = CreateContext();
+
+                // بنود البيع مع حقول الفاتورة اللازمة لتوزيع خصم الفاتورة على بنودها بنسبة قيمة البند
+                var soldLines = await (from item in context.SalesInvoiceItems
+                                       join invoice in context.SalesInvoices on item.SalesInvoiceId equals invoice.Id
+                                       where invoice.Status == PostedStatus
+                                             && invoice.InvoiceDate >= fromInclusive && invoice.InvoiceDate < toExclusive
+                                       select new
+                                       {
+                                           invoice.Id,
+                                           item.ProductId,
+                                           item.ProductName,
+                                           item.Quantity,
+                                           item.UnitPrice,
+                                           invoice.SubTotal,
+                                           invoice.Discount
+                                       })
+                                      .AsNoTracking()
+                                      .ToListAsync();
+
+                // معامل الصافي لكل فاتورة = (الإجمالي قبل الخصم − خصم الفاتورة) ÷ الإجمالي قبل الخصم
+                var netFactors = soldLines
+                    .GroupBy(x => x.Id)
+                    .ToDictionary(
+                        g => g.Key,
+                        g =>
+                        {
+                            var subTotal = g.First().SubTotal;
+                            var discount = g.First().Discount;
+                            return subTotal == 0m ? 1m : (subTotal - discount) / subTotal;
+                        });
+
+                var returnLines = await (from item in context.SalesReturnItems
+                                         join ret in context.SalesReturns on item.SalesReturnId equals ret.Id
+                                         where ret.Status == PostedStatus
+                                               && ret.ReturnDate >= fromInclusive && ret.ReturnDate < toExclusive
+                                         select new { item.ProductId, item.ProductName, item.Quantity, item.UnitPrice, item.ItemCondition })
+                                        .AsNoTracking()
+                                        .ToListAsync();
+
+                var productIds = soldLines.Select(x => x.ProductId)
+                                          .Concat(returnLines.Select(x => x.ProductId))
+                                          .Distinct()
+                                          .ToList();
+
+                var costPrices = await GetCostPricesAsync(context, productIds);
+
+                var accumulator = new Dictionary<int, ItemProfitabilityAccumulator>();
+
+                ItemProfitabilityAccumulator Accumulate(int productId, string? productName)
+                {
+                    if (!accumulator.TryGetValue(productId, out var acc))
+                    {
+                        acc = new ItemProfitabilityAccumulator { ProductId = productId };
+                        accumulator[productId] = acc;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(productName)) acc.ProductName = productName.Trim();
+                    return acc;
+                }
+
+                foreach (var line in soldLines)
+                {
+                    var acc = Accumulate(line.ProductId, line.ProductName);
+                    var factor = netFactors.TryGetValue(line.Id, out var netFactor) ? netFactor : 1m;
+
+                    acc.QuantitySold += line.Quantity;
+                    acc.SalesValue += line.Quantity * line.UnitPrice * factor;
+                    acc.Cost += line.Quantity * CostOf(costPrices, line.ProductId);
+                }
+
+                foreach (var line in returnLines)
+                {
+                    var acc = Accumulate(line.ProductId, line.ProductName);
+
+                    // كل المرتجعات المعتمدة تُخصم من صافي المبيعات (نفس منهج الجزء أ)،
+                    // أما التكلفة فلا تُخفض إلا لبنود "صالح للبيع" التي تُعاد للمخزون.
+                    acc.QuantitySold -= line.Quantity;
+                    acc.SalesValue -= line.Quantity * line.UnitPrice;
+
+                    if (line.ItemCondition == SellableCondition || line.ItemCondition == SellableConditionAlt)
+                        acc.Cost -= line.Quantity * CostOf(costPrices, line.ProductId);
+                }
+
+                var rows = accumulator.Values
+                    .Where(a => a.QuantitySold != 0 || a.SalesValue != 0m || a.Cost != 0m)
+                    .Select(a => new ItemProfitabilityRow
+                    {
+                        ProductId = a.ProductId,
+                        ProductName = string.IsNullOrWhiteSpace(a.ProductName) ? UnknownProduct : a.ProductName,
+                        QuantitySold = a.QuantitySold,
+                        SalesValue = a.SalesValue,
+                        Cost = a.Cost
+                    })
+                    .OrderByDescending(r => r.Profit)
+                    .ThenBy(r => r.ProductId)
+                    .ToList();
+
+                return new ItemProfitabilityModel
+                {
+                    PeriodStart = fromInclusive,
+                    PeriodEndExclusive = toExclusive,
+                    TotalSalesValue = rows.Sum(r => r.SalesValue),
+                    TotalCost = rows.Sum(r => r.Cost),
+                    IsCogsEstimated = true,
+                    Rows = rows,
+                    Best = rows.Take(topCount).ToList(),
+                    Worst = rows.OrderBy(r => r.Profit).ThenBy(r => r.ProductId).Take(topCount).ToList()
+                };
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"تعذر إنشاء تقرير ربحية الأصناف: {ex.Message}", ex);
+            }
+        }
+
+        private static decimal CostOf(Dictionary<int, decimal> costPrices, int productId)
+            => costPrices.TryGetValue(productId, out var price) ? price : 0m;
+
+        /// <summary>مُجمِّع مساعد لربحية الأصناف (لا يُخزَّن ولا يُتعقَّب).</summary>
+        private sealed class ItemProfitabilityAccumulator
+        {
+            public int ProductId { get; set; }
+            public string ProductName { get; set; } = string.Empty;
+            public int QuantitySold { get; set; }
+            public decimal SalesValue { get; set; }
+            public decimal Cost { get; set; }
         }
 
         /// <summary>نوع مساعد للتجميع (كمية و/أو قيمة) بدون كيانات متعقَّبة.</summary>

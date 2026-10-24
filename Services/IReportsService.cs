@@ -22,5 +22,21 @@ namespace CarPartManager.Services
 
         /// <summary>تقرير المصروفات (الإجمالي + التفصيل حسب التصنيف + القائمة التفصيلية + مقارنة بالفترة السابقة)</summary>
         Task<ExpenseReportModel> GetExpensesReportAsync(DateTime fromInclusive, DateTime toExclusive, bool includePreviousComparison = true);
+
+        /// <summary>
+        /// تقرير المشتريات لفترة (الفواتير المعتمدة فقط): الإجمالي + الجدول اليومي + الإجمالي حسب المورد + أفضل الأصناف المشتراة.
+        /// </summary>
+        Task<PurchaseReportModel> GetPurchasesReportAsync(DateTime fromInclusive, DateTime toExclusive, bool includePreviousComparison = true, int topProducts = 10);
+
+        /// <summary>
+        /// تقييم المخزون الحالي (لا يتأثر بالمرشّح التاريخي): القيمة + النواقص + النفد + الأصناف الراكدة + الأعلى قيمة.
+        /// </summary>
+        Task<InventoryValuationModel> GetInventoryValuationAsync(int stagnantDays = 60, int topByValue = 10);
+
+        /// <summary>مديونيات العملاء (الحالة الحالية) — يُعاد استخدام خدمة العملاء لحساب الرصيد.</summary>
+        Task<CustomerDebtReportModel> GetCustomerDebtsAsync();
+
+        /// <summary>ربحية الأصناف في الفترة (الكمية، قيمة البيع، التكلفة، الربح، نسبة الهامش).</summary>
+        Task<ItemProfitabilityModel> GetItemProfitabilityAsync(DateTime fromInclusive, DateTime toExclusive, int topCount = 10);
     }
 }
