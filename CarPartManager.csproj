@@ -15,10 +15,11 @@
     <None Include="New folder\**" />
   </ItemGroup>
 
-  <!-- استثناء مشروع الاختبار المتداخل من تجميع التطبيق (مطلوب لأنه موجود داخل مجلد التطبيق) -->
+  <!-- استثناء مشروع الاختبار المتداخل من تجميع التطبيق (مطلوب لأنه موجود داخل مجلد التطبيق) لمنع تكرار الخصائص -->
   <ItemGroup>
     <Compile Remove="CarPartManager.Tests\**" />
     <Page Remove="CarPartManager.Tests\**" />
+    <None Remove="CarPartManager.Tests\**" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />

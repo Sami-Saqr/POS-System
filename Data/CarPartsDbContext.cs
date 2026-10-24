@@ -30,6 +30,11 @@ namespace CarPartManager.Data
         public DbSet<StocktakeSessionModel> StocktakeSessions => Set<StocktakeSessionModel>();
         public DbSet<StocktakeLineModel> StocktakeLines => Set<StocktakeLineModel>();
 
+        // ── جداول المصروفات (Expenses Module) ──────────────────────────────────
+        public DbSet<ExpenseModel> Expenses => Set<ExpenseModel>();
+        public DbSet<ExpenseCategoryModel> ExpenseCategories => Set<ExpenseCategoryModel>();
+        public DbSet<ExpenseHistoryModel> ExpenseHistories => Set<ExpenseHistoryModel>();
+
         /// <summary>
         /// الحصول على المسار الآمن والدائم لملف قاعدة البيانات في LocalApplicationData
         /// لتجنب حفظها في bin/obj أو ربطها بمسار ثابت يحتوي اسم مستخدم محدد.
@@ -649,6 +654,157 @@ namespace CarPartManager.Data
                 entity.Ignore(l => l.HasDifference);
                 entity.Ignore(l => l.DifferenceType);
                 entity.Ignore(l => l.DifferenceColor);
+            });
+
+            // 12. تكوين جدول تصنيفات المصروفات (ExpenseCategories)
+            modelBuilder.Entity<ExpenseCategoryModel>(entity =>
+            {
+                entity.ToTable("ExpenseCategories");
+
+                entity.HasKey(c => c.Id);
+                entity.Property(c => c.Id).ValueGeneratedOnAdd();
+
+                entity.Property(c => c.Name)
+                      .HasMaxLength(150)
+                      .IsRequired();
+                entity.HasIndex(c => c.Name);
+
+                entity.Property(c => c.IsActive)
+                      .HasDefaultValue(true);
+
+                entity.Property(c => c.CreatedDate)
+                      .IsRequired();
+
+                entity.Ignore(c => c.IsUsed);
+                entity.Ignore(c => c.UsageText);
+                entity.Ignore(c => c.StatusText);
+                entity.Ignore(c => c.StatusColor);
+                entity.Ignore(c => c.StatusBackground);
+                // يُحسب في الذاكرة فقط بعد الاستعلام (عمود غير موجود في الجداول المُنشأة بـ DDL)
+                entity.Ignore(c => c.ExpensesCount);
+            });
+
+            // 13. تكوين جدول المصروفات (Expenses)
+            modelBuilder.Entity<ExpenseModel>(entity =>
+            {
+                entity.ToTable("Expenses");
+
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+
+                entity.Property(e => e.ExpenseDate)
+                      .IsRequired();
+                entity.HasIndex(e => e.ExpenseDate);
+
+                entity.Property(e => e.CategoryId)
+                      .IsRequired();
+                entity.HasIndex(e => e.CategoryId);
+
+                entity.Property(e => e.Description)
+                      .HasMaxLength(300)
+                      .IsRequired(false);
+
+                entity.Property(e => e.Amount)
+                      .HasPrecision(18, 2)
+                      .IsRequired();
+
+                entity.Property(e => e.PaymentMethod)
+                      .HasMaxLength(50)
+                      .HasDefaultValue("نقدي");
+
+                entity.Property(e => e.ReferenceNumber)
+                      .HasMaxLength(100)
+                      .IsRequired(false);
+
+                entity.Property(e => e.Notes)
+                      .HasMaxLength(500)
+                      .IsRequired(false);
+
+                entity.Property(e => e.IsCancelled)
+                      .HasDefaultValue(false);
+
+                entity.Property(e => e.CancellationReason)
+                      .HasMaxLength(500)
+                      .IsRequired(false);
+
+                entity.Property(e => e.CreatedAt)
+                      .IsRequired();
+
+                entity.Property(e => e.CreatedBy)
+                      .HasMaxLength(150)
+                      .IsRequired(false);
+
+                entity.Property(e => e.ModifiedBy)
+                      .HasMaxLength(150)
+                      .IsRequired(false);
+
+                // ربط واجب بالتصنيف مع منع الحذف النهائي لأي تصنيف مستخدم (ON DELETE RESTRICT)
+                entity.HasOne<ExpenseCategoryModel>()
+                      .WithMany()
+                      .HasForeignKey(e => e.CategoryId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // خصائص عرض محسوبة لا تُخزَّن في قاعدة البيانات
+                entity.Ignore(e => e.StatusText);
+                entity.Ignore(e => e.StatusColor);
+                entity.Ignore(e => e.StatusBackground);
+                entity.Ignore(e => e.UserDisplayName);
+                entity.Ignore(e => e.ExpenseDateText);
+                entity.Ignore(e => e.AmountText);
+                entity.Ignore(e => e.ModifiedAtText);
+                entity.Ignore(e => e.CategoryName);
+            });
+
+            // 14. تكوين جدول سجل تدقيق المصروفات (ExpenseHistories)
+            modelBuilder.Entity<ExpenseHistoryModel>(entity =>
+            {
+                entity.ToTable("ExpenseHistories");
+
+                entity.HasKey(h => h.Id);
+                entity.Property(h => h.Id).ValueGeneratedOnAdd();
+
+                entity.Property(h => h.ExpenseId)
+                      .IsRequired();
+                entity.HasIndex(h => h.ExpenseId);
+
+                entity.Property(h => h.ChangedAt)
+                      .IsRequired();
+                entity.HasIndex(h => h.ChangedAt);
+
+                entity.Property(h => h.ChangedBy)
+                      .HasMaxLength(150)
+                      .IsRequired(false);
+
+                entity.Property(h => h.ChangeType)
+                      .HasMaxLength(30)
+                      .HasDefaultValue("تعديل");
+
+                entity.Property(h => h.PreviousCategoryName)
+                      .HasMaxLength(150)
+                      .IsRequired(false);
+
+                entity.Property(h => h.NewCategoryName)
+                      .HasMaxLength(150)
+                      .IsRequired(false);
+
+                entity.Property(h => h.Reason)
+                      .HasMaxLength(500)
+                      .IsRequired(false);
+
+                // ربط بسجل المصروف مع الحفاظ على سجل التدقيق (لا يُحذف المصروف أصلاً)
+                entity.HasOne<ExpenseModel>()
+                      .WithMany()
+                      .HasForeignKey(h => h.ExpenseId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Ignore(h => h.ChangedAtText);
+                entity.Ignore(h => h.ChangedByText);
+                entity.Ignore(h => h.ChangeTypeColor);
+                entity.Ignore(h => h.PreviousAmountText);
+                entity.Ignore(h => h.NewAmountText);
+                entity.Ignore(h => h.AmountChangeText);
+                entity.Ignore(h => h.CategoryChangeText);
+                entity.Ignore(h => h.DateChangeText);
             });
         }
     }

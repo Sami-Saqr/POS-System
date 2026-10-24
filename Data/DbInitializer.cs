@@ -280,8 +280,131 @@ namespace CarPartManager.Data
             // ── ترحيل الفهرس الفريد لهواتف العملاء بعد فحص التكرارات (UniqueCustomerPhoneMigration) ───
             await MigrateCustomerPhoneIndexAsync(context);
 
+            // ── ترحيل وحدة المصروفات (AddExpensesModule) ───────────────────────────
+            await EnsureExpenseTablesCreatedAsync(context);
+            await SeedDefaultExpenseCategoriesAsync(context);
+
             // ── ترحيل حركات المخزون الافتتاحية (OpeningStockMovementsMigration) ───
             await BackfillOpeningStockMovementsAsync(context);
+        }
+
+        /// <summary>
+        /// إنشاء جداول وحدة المصروفات بشكل تراكمي وآمن (CREATE TABLE IF NOT EXISTS)
+        /// لا تُحذف ولا تُعدَّل أي بيانات أو جداول موجودة مسبقاً.
+        /// </summary>
+        private static async Task EnsureExpenseTablesCreatedAsync(CarPartsDbContext context)
+        {
+            // إنشاء جدول تصنيفات المصروفات إن لم يكن موجوداً
+            await context.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""ExpenseCategories"" (
+                    ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_ExpenseCategories"" PRIMARY KEY AUTOINCREMENT,
+                    ""Name"" TEXT NOT NULL,
+                    ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                    ""CreatedDate"" TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ""IX_ExpenseCategories_Name"" ON ""ExpenseCategories"" (""Name"");
+            ");
+
+            // إنشاء جدول المصروفات إن لم يكن موجوداً
+            await context.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""Expenses"" (
+                    ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_Expenses"" PRIMARY KEY AUTOINCREMENT,
+                    ""ExpenseDate"" TEXT NOT NULL,
+                    ""CategoryId"" INTEGER NOT NULL,
+                    ""Description"" TEXT NULL,
+                    ""Amount"" TEXT NOT NULL,
+                    ""PaymentMethod"" TEXT NOT NULL DEFAULT 'نقدي',
+                    ""ReferenceNumber"" TEXT NULL,
+                    ""Notes"" TEXT NULL,
+                    ""IsCancelled"" INTEGER NOT NULL DEFAULT 0,
+                    ""CancellationDate"" TEXT NULL,
+                    ""CancellationReason"" TEXT NULL,
+                    ""CreatedAt"" TEXT NOT NULL,
+                    ""CreatedBy"" TEXT NULL,
+                    ""ModifiedAt"" TEXT NULL,
+                    ""ModifiedBy"" TEXT NULL,
+                    CONSTRAINT ""FK_Expenses_ExpenseCategories_CategoryId""
+                        FOREIGN KEY (""CategoryId"") REFERENCES ""ExpenseCategories"" (""Id"") ON DELETE RESTRICT
+                );
+                CREATE INDEX IF NOT EXISTS ""IX_Expenses_ExpenseDate"" ON ""Expenses"" (""ExpenseDate"");
+                CREATE INDEX IF NOT EXISTS ""IX_Expenses_CategoryId"" ON ""Expenses"" (""CategoryId"");
+                CREATE INDEX IF NOT EXISTS ""IX_Expenses_IsCancelled"" ON ""Expenses"" (""IsCancelled"");
+            ");
+
+            // إنشاء جدول سجل تدقيق المصروفات إن لم يكن موجوداً
+            await context.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""ExpenseHistories"" (
+                    ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_ExpenseHistories"" PRIMARY KEY AUTOINCREMENT,
+                    ""ExpenseId"" INTEGER NOT NULL,
+                    ""ChangedAt"" TEXT NOT NULL,
+                    ""ChangedBy"" TEXT NULL,
+                    ""ChangeType"" TEXT NOT NULL DEFAULT 'تعديل',
+                    ""PreviousAmount"" TEXT NULL,
+                    ""NewAmount"" TEXT NULL,
+                    ""PreviousCategoryName"" TEXT NULL,
+                    ""NewCategoryName"" TEXT NULL,
+                    ""PreviousExpenseDate"" TEXT NULL,
+                    ""NewExpenseDate"" TEXT NULL,
+                    ""Reason"" TEXT NULL,
+                    CONSTRAINT ""FK_ExpenseHistories_Expenses_ExpenseId""
+                        FOREIGN KEY (""ExpenseId"") REFERENCES ""Expenses"" (""Id"") ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS ""IX_ExpenseHistories_ExpenseId"" ON ""ExpenseHistories"" (""ExpenseId"");
+                CREATE INDEX IF NOT EXISTS ""IX_ExpenseHistories_ChangedAt"" ON ""ExpenseHistories"" (""ChangedAt"");
+            ");
+        }
+
+        /// <summary>
+        /// التصنيفات الافتراضية للمصروفات (تُضاف مرة واحدة فقط وبشكل تراكمي ثابت)
+        /// </summary>
+        private static readonly string[] DefaultExpenseCategoryNames =
+        {
+            "إيجار",
+            "كهرباء ومياه",
+            "مرتبات",
+            "نقل وشحن",
+            "صيانة",
+            "تسويق",
+            "مستلزمات",
+            "أخرى"
+        };
+
+        /// <summary>
+        /// تغذية التصنيفات الافتراضية للمصروفات (Idempotent Seed)
+        /// لا يُضاف تصنيف موجود مسبقاً بنفس الاسم بعد توحيده (تقليم المسافات وتقليصها وتجاهل حالة الأحرف).
+        /// </summary>
+        private static async Task SeedDefaultExpenseCategoriesAsync(CarPartsDbContext context)
+        {
+            try
+            {
+                var existingNames = await context.ExpenseCategories
+                    .AsNoTracking()
+                    .Select(c => c.Name)
+                    .ToListAsync();
+
+                var existingNormalized = new HashSet<string>(
+                    existingNames.Select(NameNormalizer.Normalize),
+                    StringComparer.OrdinalIgnoreCase);
+
+                var missing = DefaultExpenseCategoryNames
+                    .Where(n => !existingNormalized.Contains(NameNormalizer.Normalize(n)))
+                    .Select(n => new ExpenseCategoryModel
+                    {
+                        Name = n,
+                        IsActive = true,
+                        CreatedDate = DateTime.Now
+                    })
+                    .ToList();
+
+                if (missing.Count == 0) return;
+
+                await context.ExpenseCategories.AddRangeAsync(missing);
+                await context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[SeedDefaultExpenseCategories] {ex.Message}");
+            }
         }
 
         private static async Task MigrateCustomerPhoneIndexAsync(CarPartsDbContext context)
