@@ -5,6 +5,39 @@
 **Task:** Implement "المصروفات" (Expenses) screen as a real DB-backed module
 **Branch:** `feature-expenses` (from `main`)
 **Status:** ✅ Implementation COMPLETE — build verified, manual UI testing pending
+**Latest fix:** ✅ runtime SQLite errors on the Expenses screen fixed (see "0. Bug fix" below)
+
+---
+
+## 0. Bug fix (2026-10-24): SQLite errors on the Expenses screen
+
+**Symptoms:** opening the screen → "تعذر تحميل تصنيفات المصروفات" (+ SQLite error); adding a category →
+"تعذر إضافة التصنيف" (+ SQLite error).
+
+**Confirmed root cause:** `ExpenseCategoryModel.ExpensesCount` (a display-only counter) was mapped by
+convention because it was **missing from the `Ignore(...)` list** in `CarPartsDbContext.OnModelCreating`
+(`ExpenseCategory` block). EF therefore expected a real column `ExpensesCount` in the `ExpenseCategories`
+table, but the raw DDL in `DbInitializer.EnsureExpenseTablesCreatedAsync()` only creates `Id, Name, IsActive,
+CreatedDate`. `EnsureCreatedAsync()` does nothing on an existing database (the tables come from the raw DDL),
+so the column was missing → `SQLite Error 1: no such column: c.ExpensesCount` on `SELECT`, and
+`no such column named ExpensesCount` on `INSERT`. A fresh database worked because `EnsureCreatedAsync()`
+builds the schema from the model (including the bogus column) — which is why the bug only appeared on an
+existing database. `ExpensesCount` is never used in SQL; it is assigned in memory in
+`SqliteExpenseService.GetCategoriesAsync()`.
+
+**Fix (2 commits, no schema change, no DDL change needed):**
+1. `4347d05` — `Data/CarPartsDbContext.cs`: added `entity.Ignore(c => c.ExpensesCount);` so the EF model
+   matches the DDL (the property stays an in-memory, computed value as documented on the model). Works for
+   both existing and fresh databases; existing rows/tables are untouched.
+2. `6f1fe84` — `Services/SqliteExpenseService.cs`: added a private `Describe(Exception)` helper that walks to
+   the innermost exception and shows that message in the Arabic error text (EF's `DbUpdateException` message
+   — "An error occurred while saving the entity changes" — hid the real SQLite cause). Applied to all 12
+   catch wrappers; validation errors still surface as-is.
+
+**Verified:** `dotnet build CarPartManager.csproj` → Build succeeded, 0 Warning(s), 0 Error(s) after each commit
+(static verification of the model↔DDL mapping for all three expense entities; `ExpensesCount` was the only
+property missing from the DDL). No `.db` file was read/written, the app was not run, no DDL was changed.
+No test project exists on this branch, so no automated test was added (no packages added).
 
 ---
 
