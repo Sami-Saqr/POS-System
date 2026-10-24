@@ -1,0 +1,9 @@
+﻿  Determining projects to restore...
+  All projects are up-to-date for restore.
+  CarPartManager -> E:\windows_app_csharp\CarPartManager\bin\Debug\net10.0-windows\CarPartManager.dll
+  CarPartManager.Tests -> E:\windows_app_csharp\CarPartManager\CarPartManager.Tests\bin\Debug\net10.0-windows\CarPartManager.Tests.dll
+Test run for E:\windows_app_csharp\CarPartManager\CarPartManager.Tests\bin\Debug\net10.0-windows\CarPartManager.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:    15, Skipped:     0, Total:    15, Duration: 4 s - CarPartManager.Tests.dll (net10.0)
+TESTEXIT=0
