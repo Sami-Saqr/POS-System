@@ -100,7 +100,7 @@ namespace CarPartManager.ViewModels
             }
             catch (Exception ex)
             {
-                StatusMessage = $"خطأ في تحميل سجل فواتير المبيعات: {ex.Message}";
+                StatusMessage = $"خطأ في تحميل سجل فواتير المبيعات: {Describe(ex)}";
                 MessageBox.Show(StatusMessage, "خطأ في التحميل", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
@@ -108,6 +108,23 @@ namespace CarPartManager.ViewModels
                 IsLoading = false;
                 OnPropertyChanged(nameof(ShowEmptyState));
             }
+        }
+
+        /// <summary>
+        /// تجميع نص الخطأ مع الأخطاء الداخلية (مثل أخطاء SQLite الفعلية) لعرض السبب الحقيقي بوضوح.
+        /// </summary>
+        private static string Describe(Exception ex)
+        {
+            var messages = new List<string>();
+            for (Exception? current = ex; current != null; current = current.InnerException)
+            {
+                var message = current.Message?.Trim();
+                if (!string.IsNullOrWhiteSpace(message) && !messages.Contains(message))
+                {
+                    messages.Add(message);
+                }
+            }
+            return string.Join(" | ", messages);
         }
 
         private void FilterInvoicesHistory()

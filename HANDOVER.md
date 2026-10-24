@@ -18,6 +18,18 @@
 
 **Risk:** low — a XAML visibility correction plus an in-memory display fallback. The empty-state border still shows when there genuinely are no rows.
 
+## Latest (2nd pass): "STILL shows no invoices" — why, and how it is now proven
+**Date:** 2026-10-24
+**Finding:** the fix above is correct but **was never in the binary that was tested**. `git branch --contains 626d8f1` → **only `fix-sales-history`** (`main`, `feature-expenses`, `feature-reports-a`, `feature-reports-b` do **not** contain it). The newest executable before this pass (`bin/Debug/net10.0-windows/CarPartManager.exe`, 21:25:40) was produced **30 s after** the `feature-expenses` commit `7e2c1db` (21:25:10) — a branch without the fix — so the run still contained the local `Visibility="{Binding IsLoading, Converter=BoolToVisConverter}"` on the DataGrid that collapses it whenever `IsLoading == false` (i.e. always after load). The two fixed files carry the 21:29:10 checkout timestamp of the later switch back to this branch. **To verify: build/run from `fix-sales-history` (or merge it into `main`).**
+**Re-verified code path (no edits, no `.db` touched):** the history query `SqliteSalesInvoiceService.GetAllInvoicesAsync` (`Services/SqliteSalesInvoiceService.cs:45-61`) applies **no** status/date/soft-delete/branch filter and **no** join to `Customers` — walk-in rows (`CustomerId = null`) are returned and shown as "عميل نقدي"; the POS save path `PostInvoiceAsync` (`:195-373`) writes `SalesInvoices` + `SalesInvoiceItems` with `Status = "معتمدة"` (Arabic, same vocabulary), `PostedDate = DateTime.Now`, `InvoiceDate = invoice.InvoiceDate`; the working purchase query is structurally identical; the load **is** triggered on page open (`ViewModels/MainViewModel.cs:163-168`) on the same VM instance bound to the view; the catch is not silent.
+**Changes this pass:**
+- `CarPartManager.Tests/SalesHistoryQueryTests.cs` (new, in-memory SQLite — not EF InMemory): (1) saves a walk-in sale and a customer sale through the **real** `PostInvoiceAsync` path and asserts both appear in `GetAllInvoicesAsync` with `Status = "معتمدة"`, newest first, walk-in `CustomerId == null` → "عميل نقدي"; (2) simulates an old DB missing `SalesInvoices.CustomerId/CustomerAddress/CancellationDate/CancellationReason`, runs the real startup `DbInitializer.InitializeAsync` and asserts the columns are restored and the old invoice still loads.
+- `Services/SqliteSalesInvoiceService.cs:13` — `CreateContext()` is now `protected virtual` (same pattern as `SqliteStocktakeService`) so tests can point the service at a test connection.
+- `ViewModels/SalesInvoicesHistoryViewModel.cs` — load failure now shows the real Arabic error including inner exceptions (`Describe(ex)` walks `InnerException`), and the grid is explicitly bound to the same list; footer counter added.
+- `Views/SalesInvoicesHistoryView.xaml` — footer `عدد الفواتير: N` in the status bar (bound to `InvoicesHistory.Count`).
+
+**Build/Test:** `dotnet test CarPartManager.Tests\CarPartManager.Tests.csproj` → **Passed! Failed: 0, Passed: 9** (7 stocktake + 2 new), EXIT=0. Main project builds with 0 errors (8 pre-existing `CS8602` warnings in `InventoryViewModel.cs` 217–220).
+
 ## Status
 **Date:** 2026-10-23 (updated for Part 2)
 **Branch:** `wip-inventory`

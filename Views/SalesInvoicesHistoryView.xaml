@@ -280,11 +280,27 @@
                     </DataGrid.Columns>
                 </DataGrid>
 
-                <!-- شريط الحالة -->
+                <!-- شريط الحالة + عدّاد الفواتير المحمّلة -->
                 <Border Grid.Row="2" Background="#ECFDF5" BorderBrush="#A7F3D0"
                         BorderThickness="0,1,0,0" Padding="20,10">
-                    <TextBlock Text="{Binding StatusMessage}"
-                               FontSize="12" FontWeight="SemiBold" Foreground="#065F46" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding StatusMessage}"
+                                   FontSize="12" FontWeight="SemiBold" Foreground="#065F46"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" />
+
+                        <TextBlock Grid.Column="1" FontSize="12" FontWeight="Bold" Foreground="#065F46"
+                                   Margin="16,0,0,0" VerticalAlignment="Center">
+                            <Run Text="عدد الفواتير: " />
+                            <Run Text="{Binding InvoicesHistory.Count, Mode=OneWay}" />
+                        </TextBlock>
+                    </Grid>
                 </Border>
             </Grid>
         </Border>

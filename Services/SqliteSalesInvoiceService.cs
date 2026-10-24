@@ -10,7 +10,7 @@ namespace CarPartManager.Services
     /// </summary>
     public class SqliteSalesInvoiceService : ISalesInvoiceService
     {
-        private CarPartsDbContext CreateContext() => new CarPartsDbContext();
+        protected virtual CarPartsDbContext CreateContext() => new CarPartsDbContext();
 
         /// <summary>
         /// توليد رقم فاتورة بيع تسلسلي فريد وغير مكرر (مثل INV-2026-0001)
