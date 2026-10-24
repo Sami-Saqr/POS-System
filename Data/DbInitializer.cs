@@ -132,6 +132,7 @@ namespace CarPartManager.Data
                     ""ProductName"" TEXT NULL,
                     ""Quantity"" INTEGER NOT NULL,
                     ""UnitPrice"" TEXT NOT NULL,
+                    ""UnitCostAtSale"" TEXT NULL,
                     CONSTRAINT ""FK_SalesInvoiceItems_SalesInvoices_SalesInvoiceId"" 
                         FOREIGN KEY (""SalesInvoiceId"") REFERENCES ""SalesInvoices"" (""Id"") ON DELETE CASCADE
                 );
@@ -230,6 +231,10 @@ namespace CarPartManager.Data
             try { await context.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""SalesInvoices"" ADD COLUMN ""CancellationDate"" TEXT NULL;"); } catch { }
             try { await context.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""SalesInvoices"" ADD COLUMN ""CancellationReason"" TEXT NULL;"); } catch { }
             try { await context.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""InventoryMovements"" ADD COLUMN ""ReferenceId"" INTEGER NULL;"); } catch { }
+
+            // ── ترحيل تكلفة الوحدة وقت البيع (AddUnitCostAtSale) ────────────────────
+            // إضافي وآمن: تُضاف فقط إن كانت مفقودة، ولا تُعدَّل أي بيانات أو أعمدة قائمة.
+            await EnsureUnitCostAtSaleColumnAsync(context);
 
             // ── ترحيل وحدة العملاء (AddCustomersModule) ─────────────────────────────
             // إنشاء جدول العملاء إن لم يكن موجوداً
@@ -462,6 +467,54 @@ namespace CarPartManager.Data
             {
                 System.Diagnostics.Debug.WriteLine($"[MigrateCustomerPhoneIndex] {ex.Message}");
                 try { await context.Database.ExecuteSqlRawAsync(@"CREATE INDEX IF NOT EXISTS ""IX_Customers_Phone"" ON ""Customers"" (""Phone"");"); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// إضافة عمود تكلفة الوحدة وقت البيع (SalesInvoiceItems.UnitCostAtSale) إن كان مفقوداً.
+        /// الفحص يتم عبر PRAGMA table_info أولاً، ثم ALTER TABLE ADD COLUMN فقط عند غيابه (بدون أي حذف أو إعادة إنشاء).
+        /// البنود القديمة تبقى NULL عمداً ولا تُملأ بأي تكلفة تقديرية.
+        /// </summary>
+        private static async Task EnsureUnitCostAtSaleColumnAsync(CarPartsDbContext context)
+        {
+            const string tableName = "SalesInvoiceItems";
+            const string columnName = "UnitCostAtSale";
+
+            if (await ColumnExistsAsync(context, tableName, columnName)) return;
+
+            await context.Database.ExecuteSqlRawAsync(
+                @"ALTER TABLE ""SalesInvoiceItems"" ADD COLUMN ""UnitCostAtSale"" TEXT NULL;");
+        }
+
+        /// <summary>
+        /// فحص وجود عمود في جدول SQLite باستخدام PRAGMA table_info (قراءة فقط).
+        /// </summary>
+        private static async Task<bool> ColumnExistsAsync(CarPartsDbContext context, string tableName, string columnName)
+        {
+            var connection = context.Database.GetDbConnection();
+            var shouldClose = connection.State != System.Data.ConnectionState.Open;
+            if (shouldClose) await connection.OpenAsync();
+
+            try
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = $"PRAGMA table_info(\"{tableName}\");";
+
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    // العمود رقم 2 في PRAGMA table_info هو اسم العمود
+                    if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+            finally
+            {
+                if (shouldClose) await connection.CloseAsync();
             }
         }
 

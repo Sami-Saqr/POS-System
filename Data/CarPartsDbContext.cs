@@ -428,6 +428,10 @@ namespace CarPartManager.Data
                 entity.Property(i => i.UnitPrice)
                       .HasPrecision(18, 2);
 
+                // تكلفة الوحدة وقت البيع (nullable: البنود القديمة/المسودات بلا تكلفة مثبَّتة)
+                entity.Property(i => i.UnitCostAtSale)
+                      .HasPrecision(18, 2);
+
                 entity.Ignore(i => i.TotalPrice);
                 entity.Ignore(i => i.AvailableQuantity);
                 entity.Ignore(i => i.Barcode);

@@ -95,6 +95,17 @@ namespace CarPartManager.Models
 
         public decimal TotalPrice => Quantity * UnitPrice;
 
+        private decimal? _unitCostAtSale;
+        /// <summary>
+        /// تكلفة الوحدة (سعر الشراء) وقت اعتماد الفاتورة — تُثبَّت عند البيع وتبقى ثابتة تاريخياً.
+        /// تبقى NULL للبنود القديمة أو غير المعتمدة (المسودات) لعدم تحميل تكلفة تقديرية كأنها دقيقة.
+        /// </summary>
+        public decimal? UnitCostAtSale
+        {
+            get => _unitCostAtSale;
+            set => SetProperty(ref _unitCostAtSale, value);
+        }
+
         public SalesInvoiceItemModel()
         {
         }
