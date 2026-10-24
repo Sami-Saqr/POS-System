@@ -590,6 +590,8 @@ namespace CarPartManager.Data
                 entity.Ignore(c => c.StatusText);
                 entity.Ignore(c => c.StatusColor);
                 entity.Ignore(c => c.StatusBackground);
+                // يُحسب في الذاكرة فقط بعد الاستعلام (عمود غير موجود في الجداول المُنشأة بـ DDL)
+                entity.Ignore(c => c.ExpensesCount);
             });
 
             // 13. تكوين جدول المصروفات (Expenses)
