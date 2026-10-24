@@ -25,7 +25,8 @@ namespace CarPartManager.Services
         private const string UnknownCategory = "تصنيف غير معروف";
         private const string UnknownSupplier = "مورد غير معروف";
 
-        private static CarPartsDbContext CreateContext() => new CarPartsDbContext();
+        // قابل للتجاوز في الاختبارات (SQLite في الذاكرة) بنفس نمط بقية الخدمات.
+        protected virtual CarPartsDbContext CreateContext() => new CarPartsDbContext();
 
         // ── ملخص الأرباح ──────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ namespace CarPartManager.Services
             }
         }
 
-        private static async Task<ProfitSummaryModel> BuildProfitSummaryAsync(DateTime periodStart, DateTime periodEndExclusive)
+        private async Task<ProfitSummaryModel> BuildProfitSummaryAsync(DateTime periodStart, DateTime periodEndExclusive)
         {
             using var context = CreateContext();
 
