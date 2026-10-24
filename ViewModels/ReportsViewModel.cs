@@ -525,7 +525,7 @@ namespace CarPartManager.ViewModels
 
             IsCogsEstimated = summary.IsCogsEstimated;
             CogsNoteText = summary.IsCogsEstimated
-                ? "التكلفة تقديرية: بنود فواتير البيع لا تُخزّن تكلفة الوحدة وقت البيع، لذا تُحتسب تكلفة البضاعة المبيعة بسعر التكلفة الحالي للأصناف."
+                ? $"التكلفة تقديرية جزئياً: {summary.EstimatedLineCount} بند في {summary.EstimatedInvoiceCount} فاتورة قديمة لا تُخزّن تكلفة الوحدة وقت البيع، لذا تُحتسب تكلفتها بسعر التكلفة الحالي للأصناف، بينما بقية البنود محسوبة بتكلفتها المثبَّتة وقت البيع."
                 : string.Empty;
 
             ReturnsNoteText = "مرتجعات المبيعات المعتمدة تُخصم من صافي المبيعات، وتُخصم تكلفة البنود الصالحة للبيع (التي تُعاد للمخزون) من تكلفة البضاعة المبيعة، أما التالف/المستبعد نهائياً فلا يخفض التكلفة.";
@@ -717,7 +717,7 @@ namespace CarPartManager.ViewModels
             ItemProfitMarginText = report.TotalMarginPercent.HasValue ? $"{report.TotalMarginPercent.Value:N1}٪" : "—";
 
             ItemProfitNoteText = report.IsCogsEstimated
-                ? "التكلفة تقديرية: بنود فواتير البيع لا تُخزّن تكلفة الوحدة وقت البيع، لذا تُحتسب التكلفة بسعر التكلفة الحالي للأصناف."
+                ? $"التكلفة تقديرية جزئياً: {report.EstimatedLineCount} بند في {report.EstimatedInvoiceCount} فاتورة قديمة لا تُخزّن تكلفة الوحدة وقت البيع، لذا تُحتسب تكلفتها بسعر التكلفة الحالي للأصناف."
                 : string.Empty;
 
             OnPropertyChanged(nameof(ShowItemProfitEmptyState));

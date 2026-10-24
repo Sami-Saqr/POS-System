@@ -11,8 +11,9 @@ namespace CarPartManager.Services
     /// 1) SQLite لا يدعم تجميع (SUM) على نوع decimal، لذا يتم التجميع في قاعدة البيانات للمفاتيح
     ///    والأعداد والكميات (int)، أما مبالغ الـ decimal فتُجمَع في الذاكرة بعد جلب أعمدة مسقطة فقط
     ///    (بدون كيانات متعقَّبة) — بنفس نمط SqliteDashboardService.
-    /// 2) لا تُخزَّن تكلفة الوحدة في بنود فواتير البيع، لذا تُحتسب تكلفة البضاعة المبيعة (COGS)
-    ///    بسعر التكلفة الحالي للصنف وتكون "تقديرية" (IsCogsEstimated = true).
+    /// 2) تُخزَّن تكلفة الوحدة في بند البيع وقت اعتماد الفاتورة، وتُحتسب تكلفة البضاعة المبيعة (COGS)
+    ///    منها. أما البنود القديمة التي لا تحتوي على تكلفة مثبَّتة (NULL) فتُحتسب بسعر التكلفة الحالي
+    ///    للصنف وتُعلَن "تقديرية" مع بيان عدد البنود/الفواتير التقديرية.
     /// </summary>
     public class SqliteReportsService : IReportsService
     {
@@ -65,45 +66,82 @@ namespace CarPartManager.Services
                 .Select(r => r.TotalAmount)
                 .ToListAsync();
 
-            // كميات البيع مُجمَّعة في قاعدة البيانات (int)
-            var soldQuantities = await (from item in context.SalesInvoiceItems
-                                        join invoice in context.SalesInvoices on item.SalesInvoiceId equals invoice.Id
-                                        where invoice.Status == PostedStatus
-                                              && invoice.InvoiceDate >= periodStart && invoice.InvoiceDate < periodEndExclusive
-                                        group item by item.ProductId into grouped
-                                        select new ProductQuantity
-                                        {
-                                            ProductId = grouped.Key,
-                                            Quantity = grouped.Sum(x => x.Quantity)
-                                        })
-                                       .AsNoTracking()
-                                       .ToListAsync();
+            // بنود المبيعات المعتمدة خلال الفترة مع تكلفة الوحدة المثبَّتة وقت البيع (إن وُجدت)
+            var soldLines = await (from item in context.SalesInvoiceItems
+                                   join invoice in context.SalesInvoices on item.SalesInvoiceId equals invoice.Id
+                                   where invoice.Status == PostedStatus
+                                         && invoice.InvoiceDate >= periodStart && invoice.InvoiceDate < periodEndExclusive
+                                   select new
+                                   {
+                                       InvoiceId = invoice.Id,
+                                       item.ProductId,
+                                       item.Quantity,
+                                       item.UnitCostAtSale
+                                   })
+                                  .AsNoTracking()
+                                  .ToListAsync();
 
-            // كميات المرتجعات الصالحة للبيع فقط (تُعاد للمخزون المتاح) — مطابق لمنطق خدمة المرتجعات
-            var returnedQuantities = await (from item in context.SalesReturnItems
-                                            join ret in context.SalesReturns on item.SalesReturnId equals ret.Id
-                                            where ret.Status == PostedStatus
-                                                  && ret.ReturnDate >= periodStart && ret.ReturnDate < periodEndExclusive
-                                                  && (item.ItemCondition == SellableCondition
-                                                      || item.ItemCondition == SellableConditionAlt)
-                                            group item by item.ProductId into grouped
-                                            select new ProductQuantity
-                                            {
-                                                ProductId = grouped.Key,
-                                                Quantity = grouped.Sum(x => x.Quantity)
-                                            })
-                                           .AsNoTracking()
-                                           .ToListAsync();
+            // بنود المرتجعات الصالحة للبيع فقط (تُعاد للمخزون المتاح) — مطابق لمنطق خدمة المرتجعات
+            var returnLines = await (from item in context.SalesReturnItems
+                                     join ret in context.SalesReturns on item.SalesReturnId equals ret.Id
+                                     where ret.Status == PostedStatus
+                                           && ret.ReturnDate >= periodStart && ret.ReturnDate < periodEndExclusive
+                                           && (item.ItemCondition == SellableCondition
+                                               || item.ItemCondition == SellableConditionAlt)
+                                     select new
+                                     {
+                                         InvoiceId = ret.SalesInvoiceId,
+                                         item.ProductId,
+                                         item.Quantity,
+                                         item.SalesInvoiceItemId
+                                     })
+                                    .AsNoTracking()
+                                    .ToListAsync();
 
-            var productIds = soldQuantities.Select(x => x.ProductId)
-                                           .Concat(returnedQuantities.Select(x => x.ProductId))
-                                           .Distinct()
-                                           .ToList();
+            // تكلفة الوحدة المخزَّنة في بند البيع الأصلي لكل مرتجع (لعكس التكلفة التاريخية نفسها)
+            var originalLineIds = returnLines.Select(r => r.SalesInvoiceItemId)
+                                             .Where(id => id > 0)
+                                             .Distinct()
+                                             .ToList();
+            var originalLineCosts = originalLineIds.Count == 0
+                ? new Dictionary<int, decimal?>()
+                : (await context.SalesInvoiceItems.AsNoTracking()
+                        .Where(si => originalLineIds.Contains(si.Id))
+                        .Select(si => new { si.Id, si.UnitCostAtSale })
+                        .ToListAsync())
+                   .ToDictionary(x => x.Id, x => x.UnitCostAtSale);
+
+            var productIds = soldLines.Select(x => x.ProductId)
+                                      .Concat(returnLines.Select(x => x.ProductId))
+                                      .Distinct()
+                                      .ToList();
 
             var costPrices = await GetCostPricesAsync(context, productIds);
 
-            decimal ProductCost(IEnumerable<ProductQuantity> rows) =>
-                rows.Sum(r => r.Quantity * (costPrices.TryGetValue(r.ProductId, out var price) ? price : 0m));
+            decimal CurrentCost(int productId) => costPrices.TryGetValue(productId, out var price) ? price : 0m;
+
+            // التكلفة المثبَّتة وقت البيع، أو السعر الحالي كتقدير للبنود القديمة فقط
+            decimal? StoredCostOf(int salesInvoiceItemId) =>
+                salesInvoiceItemId > 0 && originalLineCosts.TryGetValue(salesInvoiceItemId, out var stored) ? stored : null;
+
+            decimal LineCost(int productId, int quantity, decimal? unitCostAtSale) =>
+                quantity * (unitCostAtSale ?? CurrentCost(productId));
+
+            // إحصاء البنود التقديرية (تكلفتها غير مثبَّتة) لإظهار التنبيه بعددها فقط عند وجودها
+            var estimatedInvoiceIds = new HashSet<int>();
+            var estimatedLineCount = 0;
+
+            foreach (var line in soldLines.Where(l => l.UnitCostAtSale == null))
+            {
+                estimatedLineCount++;
+                estimatedInvoiceIds.Add(line.InvoiceId);
+            }
+
+            foreach (var line in returnLines.Where(l => StoredCostOf(l.SalesInvoiceItemId) == null))
+            {
+                estimatedLineCount++;
+                estimatedInvoiceIds.Add(line.InvoiceId);
+            }
 
             return new ProfitSummaryModel
             {
@@ -112,11 +150,13 @@ namespace CarPartManager.Services
                 GrossSales = invoiceRows.Sum(x => x.SubTotal),
                 Discounts = invoiceRows.Sum(x => x.Discount),
                 SalesReturns = returnAmounts.Sum(),
-                CogsBeforeReturns = ProductCost(soldQuantities),
-                ReturnedCogsReduction = ProductCost(returnedQuantities),
+                CogsBeforeReturns = soldLines.Sum(l => LineCost(l.ProductId, l.Quantity, l.UnitCostAtSale)),
+                ReturnedCogsReduction = returnLines.Sum(l => LineCost(l.ProductId, l.Quantity, StoredCostOf(l.SalesInvoiceItemId))),
                 Expenses = await GetActiveExpensesTotalAsync(context, periodStart, periodEndExclusive),
                 InvoiceCount = invoiceRows.Count,
-                IsCogsEstimated = true
+                IsCogsEstimated = estimatedLineCount > 0,
+                EstimatedLineCount = estimatedLineCount,
+                EstimatedInvoiceCount = estimatedInvoiceIds.Count
             };
         }
 
@@ -694,6 +734,7 @@ namespace CarPartManager.Services
                                            item.ProductName,
                                            item.Quantity,
                                            item.UnitPrice,
+                                           item.UnitCostAtSale,
                                            invoice.SubTotal,
                                            invoice.Discount
                                        })
@@ -716,9 +757,30 @@ namespace CarPartManager.Services
                                          join ret in context.SalesReturns on item.SalesReturnId equals ret.Id
                                          where ret.Status == PostedStatus
                                                && ret.ReturnDate >= fromInclusive && ret.ReturnDate < toExclusive
-                                         select new { item.ProductId, item.ProductName, item.Quantity, item.UnitPrice, item.ItemCondition })
+                                         select new
+                                         {
+                                             item.ProductId,
+                                             item.ProductName,
+                                             item.Quantity,
+                                             item.UnitPrice,
+                                             item.ItemCondition,
+                                             item.SalesInvoiceItemId
+                                         })
                                         .AsNoTracking()
                                         .ToListAsync();
+
+                // تكلفة الوحدة المخزَّنة في بند البيع الأصلي لكل مرتجع (لعكس التكلفة التاريخية نفسها)
+                var originalLineIds = returnLines.Select(r => r.SalesInvoiceItemId)
+                                                 .Where(id => id > 0)
+                                                 .Distinct()
+                                                 .ToList();
+                var originalLineCosts = originalLineIds.Count == 0
+                    ? new Dictionary<int, decimal?>()
+                    : (await context.SalesInvoiceItems.AsNoTracking()
+                            .Where(si => originalLineIds.Contains(si.Id))
+                            .Select(si => new { si.Id, si.UnitCostAtSale })
+                            .ToListAsync())
+                       .ToDictionary(x => x.Id, x => x.UnitCostAtSale);
 
                 var productIds = soldLines.Select(x => x.ProductId)
                                           .Concat(returnLines.Select(x => x.ProductId))
@@ -726,6 +788,28 @@ namespace CarPartManager.Services
                                           .ToList();
 
                 var costPrices = await GetCostPricesAsync(context, productIds);
+
+                // التكلفة المثبَّتة وقت البيع، أو السعر الحالي كتقدير للبنود القديمة فقط
+                decimal? StoredCostOf(int salesInvoiceItemId) =>
+                    salesInvoiceItemId > 0 && originalLineCosts.TryGetValue(salesInvoiceItemId, out var stored) ? stored : null;
+
+                decimal LineCost(int productId, int quantity, decimal? unitCostAtSale) =>
+                    quantity * (unitCostAtSale ?? CostOf(costPrices, productId));
+
+                // إحصاء البنود التقديرية لإظهار التنبيه بعددها فقط عند وجودها
+                var estimatedInvoiceIds = new HashSet<int>();
+                var estimatedLineCount = 0;
+
+                foreach (var line in soldLines.Where(l => l.UnitCostAtSale == null))
+                {
+                    estimatedLineCount++;
+                    estimatedInvoiceIds.Add(line.Id);
+                }
+
+                foreach (var line in returnLines.Where(l => StoredCostOf(l.SalesInvoiceItemId) == null))
+                {
+                    estimatedLineCount++;
+                }
 
                 var accumulator = new Dictionary<int, ItemProfitabilityAccumulator>();
 
@@ -748,7 +832,7 @@ namespace CarPartManager.Services
 
                     acc.QuantitySold += line.Quantity;
                     acc.SalesValue += line.Quantity * line.UnitPrice * factor;
-                    acc.Cost += line.Quantity * CostOf(costPrices, line.ProductId);
+                    acc.Cost += LineCost(line.ProductId, line.Quantity, line.UnitCostAtSale);
                 }
 
                 foreach (var line in returnLines)
@@ -761,7 +845,7 @@ namespace CarPartManager.Services
                     acc.SalesValue -= line.Quantity * line.UnitPrice;
 
                     if (line.ItemCondition == SellableCondition || line.ItemCondition == SellableConditionAlt)
-                        acc.Cost -= line.Quantity * CostOf(costPrices, line.ProductId);
+                        acc.Cost -= LineCost(line.ProductId, line.Quantity, StoredCostOf(line.SalesInvoiceItemId));
                 }
 
                 var rows = accumulator.Values
@@ -784,7 +868,9 @@ namespace CarPartManager.Services
                     PeriodEndExclusive = toExclusive,
                     TotalSalesValue = rows.Sum(r => r.SalesValue),
                     TotalCost = rows.Sum(r => r.Cost),
-                    IsCogsEstimated = true,
+                    IsCogsEstimated = estimatedLineCount > 0,
+                    EstimatedLineCount = estimatedLineCount,
+                    EstimatedInvoiceCount = estimatedInvoiceIds.Count,
                     Rows = rows,
                     Best = rows.Take(topCount).ToList(),
                     Worst = rows.OrderBy(r => r.Profit).ThenBy(r => r.ProductId).Take(topCount).ToList()

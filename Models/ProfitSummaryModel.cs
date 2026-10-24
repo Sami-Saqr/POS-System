@@ -21,7 +21,7 @@ namespace CarPartManager.Models
         /// <summary>صافي المبيعات = إجمالي المبيعات − الخصومات − المرتجعات</summary>
         public decimal NetSales => GrossSales - Discounts - SalesReturns;
 
-        /// <summary>تكلفة البضاعة المبيعة قبل تعديل المرتجعات (تقديرية وفق سعر التكلفة الحالي للأصناف)</summary>
+        /// <summary>تكلفة البضاعة المبيعة قبل تعديل المرتجعات (من سعر الشراء المخزَّن في بند البيع وقت البيع، مع رجوع للسعر الحالي للبنود القديمة فقط)</summary>
         public decimal CogsBeforeReturns { get; set; }
 
         /// <summary>تكلفة بنود المرتجعات الصالحة للبيع (تُعاد للمخزون) — تُخصم من تكلفة البضاعة المبيعة</summary>
@@ -42,8 +42,17 @@ namespace CarPartManager.Models
         /// <summary>عدد فواتير المبيعات المعتمدة خلال الفترة</summary>
         public int InvoiceCount { get; set; }
 
-        /// <summary>هل التكلفة تقديرية؟ (نعم دائماً حالياً لعدم تخزين تكلفة الوحدة في بنود البيع)</summary>
-        public bool IsCogsEstimated { get; set; } = true;
+        /// <summary>
+        /// هل التكلفة تقديرية؟ صحيح فقط عند وجود بنود بيع/مرتجعات بلا تكلفة مثبَّتة (بنود قديمة)،
+        /// وإلا فالتكلفة محسوبة من سعر الشراء المخزَّن في بند الفاتورة وقت البيع.
+        /// </summary>
+        public bool IsCogsEstimated { get; set; }
+
+        /// <summary>عدد البنود التي حُسبت تكلفتها تقديرياً (تكلفتها غير مثبَّتة)</summary>
+        public int EstimatedLineCount { get; set; }
+
+        /// <summary>عدد الفواتير التي تحتوي على بنود تكلفتها تقديرية</summary>
+        public int EstimatedInvoiceCount { get; set; }
 
         /// <summary>الفترة السابقة المماثلة (بنفس الطول) — null إذا لم تُطلب المقارنة</summary>
         public ProfitSummaryModel? Previous { get; set; }

@@ -24,7 +24,8 @@ namespace CarPartManager.Models
 
     /// <summary>
     /// ربحية الأصناف في الفترة المحددة.
-    /// التكلفة تقديرية لأن بنود فواتير البيع لا تُخزّن تكلفة الوحدة وقت البيع (نفس منهج الجزء أ).
+    /// التكلفة تُحسب من تكلفة الوحدة المخزَّنة في بند البيع وقت البيع (نفس منهج الجزء أ)،
+    /// وتكون تقديرية فقط للبنود القديمة التي لا تحتوي على تكلفة مثبَّتة.
     /// </summary>
     public class ItemProfitabilityModel
     {
@@ -36,8 +37,17 @@ namespace CarPartManager.Models
         public decimal TotalProfit => TotalSalesValue - TotalCost;
         public decimal? TotalMarginPercent => TotalSalesValue == 0m ? null : Math.Round(TotalProfit / TotalSalesValue * 100m, 1);
 
-        /// <summary>هل التكلفة تقديرية؟ (true دائماً حالياً — لا تُخزَّن تكلفة الوحدة في بنود البيع)</summary>
-        public bool IsCogsEstimated { get; set; } = true;
+        /// <summary>
+        /// هل التكلفة تقديرية؟ صحيح فقط عند وجود بنود بيع/مرتجعات بلا تكلفة مثبَّتة (بنود قديمة)
+        /// خلال الفترة المحددة، وإلا فالتكلفة محسوبة من تكلفة الوحدة المخزَّنة وقت البيع.
+        /// </summary>
+        public bool IsCogsEstimated { get; set; }
+
+        /// <summary>عدد البنود التي حُسبت تكلفتها تقديرياً (تكلفتها غير مثبَّتة)</summary>
+        public int EstimatedLineCount { get; set; }
+
+        /// <summary>عدد الفواتير التي تحتوي على بنود تكلفتها تقديرية</summary>
+        public int EstimatedInvoiceCount { get; set; }
 
         public List<ItemProfitabilityRow> Rows { get; set; } = new();
 
