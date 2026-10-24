@@ -1,5 +1,23 @@
 # CarPartManager - Handover Document
 
+## Latest: Sales invoices history showed no invoices — FIXED (branch `fix-sales-history`)
+**Date:** 2026-10-24
+**Symptom:** "سجل فواتير المبيعات" listed nothing (only the empty state) while the purchase history listed completed purchases, even though POS sales were completed.
+
+**Root cause (confirmed, code-only — no DB touched):**
+- [SalesInvoicesHistoryView.xaml](file:///e:/windows_app_csharp/CarPartManager/Views/SalesInvoicesHistoryView.xaml#L141) (old line 141) set a **local** `Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisConverter}}"` on the DataGrid. `BooleanToVisibilityConverter` maps `false` → `Collapsed`, and a **local value outranks Style triggers** in WPF precedence, so as soon as loading finished (`IsLoading = false`) the grid was permanently `Collapsed` and the `ShowEmptyState` border was all the user ever saw. The purchase history view has no such local binding (only the loading `DataTrigger`), which is why it worked.
+- Ruled out (verified by reading code, not the DB): the sales VM is structurally identical to the purchase VM; `SqliteSalesInvoiceService.GetAllInvoicesAsync` has **no** status/date/IsActive filter, **no** join to `Customers` (walk-in rows with `CustomerId = null` are returned), and orders `InvoiceDate DESC, Id DESC`; the POS save path `SalesInvoicesViewModel.ExecutePostInvoiceAsync` → `SqliteSalesInvoiceService.PostInvoiceAsync` writes to the `SalesInvoices` table with `Status = "معتمدة"`; navigation in `MainViewModel.NavigateTo` loads then sets `CurrentViewModel` symmetrically for both history pages; `DbContext` is created per call (`using`), no stale context; the VM already shows an Arabic `MessageBox` + status message on failure (no silent catch).
+
+**Fix (smallest safe change, no schema/invoice/inventory/accounting change):**
+- `Views/SalesInvoicesHistoryView.xaml` — removed the local `Visibility` binding from the DataGrid and kept a single `DataTrigger IsLoading=True → Collapsed` (mirrors the purchase history view).
+- `ViewModels/SalesInvoicesHistoryViewModel.cs` — normalise a null/empty `CustomerName` to "عميل نقدي" when loading (in-memory projection only, no DB write), so legacy / walk-in invoices never render a blank customer cell. Search and details are unchanged.
+
+**Build:** `dotnet build CarPartManager.csproj` → **Build succeeded, 0 Error(s)** (8 warnings = 4 pre-existing `CS8602` in `InventoryViewModel.cs` 217–220, duplicated for the `_wpftmp` project). Not runtime-tested (no `.db` touched, app not run).
+
+**Manual test steps:** open the app → "سجل فواتير المبيعات" → the grid must list all completed (معتمدة) sales invoices newest first, including walk-in ones showing "عميل نقدي"; type in the search box (invoice no. / customer / phone / notes); click a row to select it; click "تحديث السجل".
+
+**Risk:** low — a XAML visibility correction plus an in-memory display fallback. The empty-state border still shows when there genuinely are no rows.
+
 ## Status
 **Date:** 2026-10-23 (updated for Part 2)
 **Branch:** `wip-inventory`
