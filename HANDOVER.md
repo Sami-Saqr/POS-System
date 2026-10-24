@@ -1,5 +1,26 @@
 ﻿# CarPartManager - Handover Document
 
+## Latest: Unit cost at sale stored on sales lines — reports no longer drift (branch `feature-cost-at-sale`)
+**Date:** 2026-10-24
+**Problem:** sales invoice lines did not store the unit cost at sale time, so COGS in the accounting reports was computed from `Products.PurchasePrice` (the **latest** purchase price — updated by purchase approval at `SqlitePurchaseInvoiceService.cs:292`). Historical profit therefore changed whenever a product's cost changed.
+
+**Findings (inspect-first, code-only, no DB touched):**
+- Sales lines are created in memory by POS (`SalesInvoicesViewModel` → `new SalesInvoiceItemModel(...)`) and persisted **only** by `SqliteSalesInvoiceService`: `SaveDraftInvoiceAsync` (drafts) and `PostInvoiceAsync` (posting) — no edit/duplicate/import path; reversal paths are sales returns (reference the original line via `SalesReturnItemModel.SalesInvoiceItemId`) and invoice cancellation (flips status to `ملغاة`, excluded by the reports' `Status == "معتمدة"` filter).
+- No new costing method was introduced: the cost written at sale is exactly `ProductModel.PurchasePrice`, the same field the reports already read through `GetCostPricesAsync`.
+
+**Changes (4 commits + 1 test commit):**
+1. `8979d51` — `Models/SalesInvoiceItemModel.cs`: nullable `decimal? UnitCostAtSale`; `Data/CarPartsDbContext.cs`: `HasPrecision(18, 2)`; `Data/DbInitializer.cs`: `UnitCostAtSale TEXT NULL` in the `SalesInvoiceItems` DDL **plus** an additive, idempotent upgrade — `EnsureUnitCostAtSaleColumnAsync` checks `PRAGMA table_info("SalesInvoiceItems")` and runs `ALTER TABLE ... ADD COLUMN` only when the column is missing. Nothing is dropped or recreated.
+2. `3cf810a` — `Services/SqliteSalesInvoiceService.cs`: inside `PostInvoiceAsync` (after the transaction starts, before the save), the current `PurchasePrice` of each item's product is read and stamped on the new lines in **both** branches (new invoice + completing a draft). Drafts keep `NULL`. Totals, stock deduction and approval logic untouched.
+3. `b6ba995` — reports now use the stored cost: `CogsBeforeReturns = Σ(Quantity × (UnitCostAtSale ?? current cost))`; returns reverse the **original line's stored cost** when linkable (`SalesInvoiceItemId`), else the same fallback; `GetItemProfitabilityAsync` uses the identical formula (cross-check against gross profit preserved); `IsCogsEstimated` is now `estimatedLineCount > 0` with new `EstimatedLineCount` / `EstimatedInvoiceCount` on `ProfitSummaryModel`/`ItemProfitabilityModel`; the Arabic note in `ReportsViewModel` states how many lines/invoices of the period are estimated (Part A `CogsNoteText`, Part B `ItemProfitNoteText`).
+4. `54d2c5f` — `CarPartManager.Tests/CostAtSaleTests.cs` (6 facts, in-memory SQLite) covering (a) legacy DB without the column gets it added safely, (b) posted invoice stamps the cost / draft does not, (c) changing the product cost later does not change historical COGS, (d) legacy `NULL` lines use the fallback and set the estimate counters while clean periods do not, (e) a sellable return reverses the stored (not current) cost. `SqliteReportsService.CreateContext()` became `protected virtual` (same pattern as the other services) so the tests can point it at a test connection — no behaviour change.
+- **No backfill:** old lines stay `NULL`; they are only *reported* as estimated.
+
+**Build/Test:** `dotnet build CarPartManager.csproj` → **0 Error(s)** (8 pre-existing `CS8602` warnings in `InventoryViewModel.cs`); `dotnet test CarPartManager.Tests\CarPartManager.Tests.csproj` → **Passed! Failed: 0, Passed: 15** (9 previous + 6 new), EXIT=0. App not run, no `.db` touched.
+
+**Manual test steps:** open the app → create a sale and complete it (اعتماد) → open "التقارير المحاسبية" for a period containing it: the "التكلفة تقديرية" warning must **not** appear and COGS must equal quantity × the product's cost at the time of sale. Then approve a purchase that changes the product's cost → recompute the same period: COGS and net profit must be unchanged. A period containing pre-upgrade invoices must still show the warning, now stating the number of estimated lines/invoices.
+
+**Risks:** low. The DDL upgrade is additive and idempotent; legacy rows are correctly reported as estimated rather than silently re-costed. Residual: lines written by an older binary between upgrade and first posting are `NULL` (by design); product cost remains the *latest* purchase price (unchanged methodology).
+
 ## Latest: Sales invoices history showed no invoices — FIXED (branch `fix-sales-history`)
 **Date:** 2026-10-24
 **Symptom:** "سجل فواتير المبيعات" listed nothing (only the empty state) while the purchase history listed completed purchases, even though POS sales were completed.
