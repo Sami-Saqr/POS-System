@@ -231,6 +231,19 @@ namespace CarPartManager.Services
             {
                 SalesInvoiceModel targetInvoice;
 
+                // تكلفة الوحدة وقت البيع = سعر الشراء (التكلفة) الحالي للصنف في لحظة الاعتماد.
+                // تُثبَّت على بنود الفاتورة عند الاعتماد فقط (المسودات تبقى بلا تكلفة مثبَّتة),
+                // داخل نفس معاملة الاعتماد وخصم المخزون ودون أي تأثير على الإجماليات أو المخزون.
+                var itemProductIds = invoice.Items.Select(i => i.ProductId).Distinct().ToList();
+                var costRows = await context.Products.AsNoTracking()
+                    .Where(p => itemProductIds.Contains(p.Id))
+                    .Select(p => new { p.Id, p.PurchasePrice })
+                    .ToListAsync();
+                var costAtSale = costRows.ToDictionary(p => p.Id, p => p.PurchasePrice);
+
+                decimal? CostOfProduct(int productId) =>
+                    costAtSale.TryGetValue(productId, out var cost) ? cost : (decimal?)null;
+
                 if (invoice.Id == 0)
                 {
                     var exists = await context.SalesInvoices.AnyAsync(s => s.InvoiceNumber == invoice.InvoiceNumber);
@@ -258,7 +271,8 @@ namespace CarPartManager.Services
                             Barcode = i.Barcode?.Trim() ?? string.Empty,
                             ProductName = i.ProductName?.Trim() ?? string.Empty,
                             Quantity = i.Quantity,
-                            UnitPrice = i.UnitPrice
+                            UnitPrice = i.UnitPrice,
+                            UnitCostAtSale = CostOfProduct(i.ProductId)
                         }).ToList()
                     };
 
@@ -303,7 +317,8 @@ namespace CarPartManager.Services
                         PartNumber = i.PartNumber?.Trim() ?? string.Empty,
                         ProductName = i.ProductName?.Trim() ?? string.Empty,
                         Quantity = i.Quantity,
-                        UnitPrice = i.UnitPrice
+                        UnitPrice = i.UnitPrice,
+                        UnitCostAtSale = CostOfProduct(i.ProductId)
                     }).ToList();
 
                     await context.SaveChangesAsync();
