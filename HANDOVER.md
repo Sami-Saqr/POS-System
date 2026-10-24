@@ -1,4 +1,4 @@
-# CarPartManager - Handover Document
+﻿# CarPartManager - Handover Document
 
 ## Latest: Sales invoices history showed no invoices — FIXED (branch `fix-sales-history`)
 **Date:** 2026-10-24
@@ -68,8 +68,8 @@ None exists (single `CarPartManager.csproj`, WinExe). The requested EF tests (in
 ---
 
 **Date:** 2026-10-24
-**Task:** Implement "المصروفات" (Expenses) screen as a real DB-backed module
-**Branch:** `feature-expenses` (from `main`)
+**Task:** "التقارير المحاسبية" (Accounting Reports) screen — **Part B**: 4 additional read-only tabs (Purchases, Inventory valuation, Customer debts, Item profitability)
+**Branch:** `feature-reports-b` (from `feature-reports-a`); Part A committed on `feature-reports-a`
 **Status:** ✅ Implementation COMPLETE — build verified, manual UI testing pending
 **Latest fix:** ✅ runtime SQLite errors on the Expenses screen fixed (see "0. Bug fix" below)
 
@@ -104,10 +104,78 @@ existing database. `ExpensesCount` is never used in SQL; it is assigned in memor
 (static verification of the model↔DDL mapping for all three expense entities; `ExpensesCount` was the only
 property missing from the DDL). No `.db` file was read/written, the app was not run, no DDL was changed.
 No test project exists on this branch, so no automated test was added (no packages added).
+**Note:** READ-ONLY screen — it never modifies data. Part A's filter, service, styles and rules are reused; no schema change, no `.db` touched, app not run.
 
 ---
 
-## 1. Inspect-first findings
+## Reports — Part A (2026-10-24)
+
+### Prerequisites verified
+- Expenses module present (committed on `feature-expenses`, documented in the appendix below).
+- Sales-history bug fix present in [SalesInvoicesHistoryViewModel.cs](file:///e:/windows_app_csharp/CarPartManager/ViewModels/SalesInvoicesHistoryViewModel.cs) (try/catch + Arabic error message).
+
+### Inspection findings that drove the design
+- Invoice lifecycle: statuses are Arabic strings — `مسودة` (draft), `معتمدة` (completed/posted), `ملغاة` (cancelled). Only `معتمدة` is counted anywhere.
+- Sales lines: `SalesInvoiceItemModel` stores ProductId / PartNumber / Barcode / ProductName / Quantity / UnitPrice and **no unit cost at sale time** → COGS is **ESTIMATED** from the product's current `Products.PurchasePrice`. A visible Arabic warning ("التكلفة تقديرية") is shown. Schema and invoice logic were **not** changed.
+- Returns: `SalesReturnModel.Status` (`مسودة`/`معتمدة`) with `TotalAmount`; per-line `ItemCondition` — "صالح للبيع" (restocked) vs "تالف" (damaged → `DamagedQuantity`, not restocked) vs "استبعاد نهائي من المخزون". Only sellable returns reduce COGS.
+- Expenses: `ExpenseModel.IsCancelled` + `CancellationReason`/`CancellationDate`; cancelled rows are excluded from every total.
+- No chart library and no export/print library exist → **tables only, no chart** (a note is displayed in the UI). No test project exists on `main` → no tests added, no packages added.
+
+### Formulas implemented (money = decimal, rounded only at presentation)
+- Net sales = Σ(`SubTotal − Discount`) of `معتمدة` invoices − Σ(`TotalAmount`) of `معتمدة` returns, in the period.
+- COGS = Σ(qty × current `PurchasePrice`) over posted invoice lines − Σ(qty × same price) over **sellable** returned lines → **estimated**, not exact.
+- Gross profit = Net sales − COGS. Net profit = Gross profit − Σ(active, non-cancelled expenses in the period).
+- Previous period = identical-length window immediately before the selected period; amount and % change shown.
+- Date boundaries are **inclusive start / exclusive next-day end** (a full day is never cut off).
+
+### Files
+- New: `Services/IReportsService.cs`, `Services/SqliteReportsService.cs`, `Models/ProfitSummaryModel.cs`, `Models/SalesDailyReportRow.cs`, `Models/TopProductReportRow.cs`, `Models/CustomerSalesReportRow.cs`, `Models/ExpenseReportModel.cs`, `ViewModels/ReportsViewModel.cs`, `Views/ReportsView.xaml` (+ `.xaml.cs`).
+- Modified: `App.xaml` (DataTemplate), `ViewModels/MainViewModel.cs` (navigation branch + field).
+- No `.db` touched, no schema change, no new packages, calculations live in the reports service (MVVM).
+
+### Build
+`dotnet build CarPartManager.csproj` → **Build succeeded, 0 Warning(s), 0 Error(s)**.
+
+### TODO — Part B
+- ✅ Done — see "Reports — Part B" below.
+
+---
+
+## Reports — Part B (2026-10-24)
+
+### Prerequisites verified
+- Part A present (tabs structure, global date filter, `IReportsService`/`SqliteReportsService`) — committed on `feature-reports-a`.
+- Inventory screen merged on `main` (`StockMovement` ledger, `MinimumStock`/`ProductModel.IsLowStock`, `IInventoryService`).
+
+### Tabs added (all READ-ONLY, reuse Part A filter/service/style)
+1. **المشتريات** — posted (`معتمدة`) purchase invoices only; total + count cards, comparison to the equal-length previous window, daily table (cross-checked against its own total), by-supplier table (shown only when supplier data exists, otherwise a visible Arabic note), top purchased products.
+2. **تقييم المخزون** — current state (NOT date-filtered, labeled in the tab note with a generation timestamp). Value = Σ(available qty × current cost). Cards: total value, product count, below min level, out of stock, stagnant. Tables: top by value, below min level, out of stock, stagnant. `StagnantDays` defaults to 60 and is adjustable from a ComboBox (30/60/90/180); changing it reloads only this tab.
+3. **مديونيات العملاء** — customers with a positive balance, balance, last payment date, oldest unpaid invoice date, total debt. Balance **reuses** `SqliteCustomerService.GetAllCustomersAsync()` (the Customers screen formula: opening + Σ(GrandTotal − PaidAmount of `معتمدة`) − Σ(non-cancelled payments), floored at 0) — not reimplemented. Shows the formula note + "not affected by the date filter".
+4. **ربحية الأصناف** — per product in the period: quantity sold, sales value, cost, profit, margin %; plus best/worst tables. Item sales value distributes the invoice discount proportionally (`(SubTotal − Discount)/SubTotal × qty×price`) and subtracts returns; cost uses the current `Products.PurchasePrice` → **التكلفة تقديرية** warning shown.
+
+### Rules respected
+- No schema changes, no `.db` touched, app not run, no new packages. Aggregation is DB-side with projections + `AsNoTracking`; decimal Sum/multiply/compare done in memory after projection (SQLite cannot aggregate `decimal`). Draft/cancelled excluded everywhere. Async + loading overlay. Arabic RTL, empty states, no overlapping, resizes cleanly (Style triggers / overlay pattern — no local `Visibility` bindings).
+
+### Cross-checks (visible warnings, not silent)
+- Purchases: daily-table total is re-summed from `PurchasesDaily` and shown next to the card total.
+- Inventory: `Σ(rows.StockValue)` is recomputed and compared to the report total; mismatch → visible data warning.
+- Item profitability: total profit is compared to Part A's gross profit; mismatch → visible warning naming probable causes (discount on a zero-total invoice, return value ≠ its lines, inconsistent invoice data).
+
+### Files
+- New: `Models/PurchaseReportModel.cs`, `Models/InventoryValuationModel.cs`, `Models/CustomerDebtReportModel.cs`, `Models/ItemProfitabilityModel.cs`.
+- Modified: `Services/IReportsService.cs` (+4 methods), `Services/SqliteReportsService.cs` (4 implementations + helpers), `ViewModels/ReportsViewModel.cs` (per-tab state/loaders/apply + cross-checks), `Views/ReportsView.xaml` (+4 `TabItem`s).
+
+### Build
+`dotnet build CarPartManager.csproj` → **Build succeeded, 0 Warning(s), 0 Error(s)** (after the service/models step, after the ViewModel step, and after the XAML step).
+
+### TODO
+- Storing a real unit cost on each sales line in a future task would turn COGS/item cost from estimated into exact.
+
+---
+
+## Appendix — Previous task (2026-10-24): Expenses module — COMPLETED
+
+### 1. Inspect-first findings
 
 - **The Expenses screen was an empty placeholder**: `MainViewModel.NavigateTo` fell through to
   `PlaceholderViewModel` for tag `"Expenses"`; no `ExpensesViewModel`/`ExpensesView` existed.

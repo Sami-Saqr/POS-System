@@ -60,6 +60,10 @@
                 <views:ExpensesView />
             </DataTemplate>
 
+            <DataTemplate DataType="{x:Type viewmodels:ReportsViewModel}">
+                <views:ReportsView />
+            </DataTemplate>
+
             <DataTemplate DataType="{x:Type viewmodels:PlaceholderViewModel}">
                 <views:PlaceholderView />
             </DataTemplate>
