@@ -9,7 +9,7 @@ namespace CarPartManager.Services
     /// </summary>
     public class SqliteStocktakeService : IStocktakeService
     {
-        private CarPartsDbContext CreateContext() => new CarPartsDbContext();
+        protected virtual CarPartsDbContext CreateContext() => new CarPartsDbContext();
 
         public async Task<StocktakeSessionModel> CreateSessionAsync(string name, string scopeType, string? scopeFilter = null, string? notes = null)
         {

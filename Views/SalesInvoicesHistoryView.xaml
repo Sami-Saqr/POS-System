@@ -137,15 +137,11 @@
                           ScrollViewer.VerticalScrollBarVisibility="Auto"
                           ScrollViewer.CanContentScroll="True"
                           VirtualizingPanel.IsVirtualizing="True"
-                          VirtualizingPanel.VirtualizationMode="Recycling"
-                          Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisConverter}}">
-                    <!-- يُخفى الجدول أثناء التحميل ويُظهر الـ Spinner -->
+                          VirtualizingPanel.VirtualizationMode="Recycling">
+                    <!-- يُخفى الجدول أثناء التحميل فقط، ويظهر بعد اكتمال التحميل مهما كان عدد الصفوف -->
                     <DataGrid.Resources>
                         <Style TargetType="DataGrid" BasedOn="{StaticResource CleanDataGridStyle}">
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsLoading}" Value="False">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
                                 <DataTrigger Binding="{Binding IsLoading}" Value="True">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                 </DataTrigger>

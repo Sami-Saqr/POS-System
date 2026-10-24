@@ -88,7 +88,13 @@ namespace CarPartManager.ViewModels
             {
                 var invoices = await _invoiceService.GetAllInvoicesAsync();
                 _allInvoices.Clear();
-                _allInvoices.AddRange(invoices);
+                foreach (var inv in invoices)
+                {
+                    // الفواتير القديمة أو فواتير البيع المباشر (Walk-in) قد يكون اسم العميل فيها فارغاً
+                    if (string.IsNullOrWhiteSpace(inv.CustomerName))
+                        inv.CustomerName = "عميل نقدي";
+                    _allInvoices.Add(inv);
+                }
                 FilterInvoicesHistory();
                 StatusMessage = $"تم تحميل {_allInvoices.Count} فاتورة مبيعات.";
             }
