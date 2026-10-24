@@ -2,13 +2,50 @@
 
 ## Status
 **Date:** 2026-10-24
-**Task:** Implement "المصروفات" (Expenses) screen as a real DB-backed module
-**Branch:** `feature-expenses` (from `main`)
+**Task:** "التقارير المحاسبية" (Accounting Reports) screen — **Part A**: global date filter + Profit Summary + Sales report + Expenses report
+**Branch:** `feature-reports-a` (from `main`)
 **Status:** ✅ Implementation COMPLETE — build verified, manual UI testing pending
+**Note:** READ-ONLY screen — it never modifies data. The `TabControl` is already structured so Part B can add more tabs.
 
 ---
 
-## 1. Inspect-first findings
+## Reports — Part A (2026-10-24)
+
+### Prerequisites verified
+- Expenses module present (committed on `feature-expenses`, documented in the appendix below).
+- Sales-history bug fix present in [SalesInvoicesHistoryViewModel.cs](file:///e:/windows_app_csharp/CarPartManager/ViewModels/SalesInvoicesHistoryViewModel.cs) (try/catch + Arabic error message).
+
+### Inspection findings that drove the design
+- Invoice lifecycle: statuses are Arabic strings — `مسودة` (draft), `معتمدة` (completed/posted), `ملغاة` (cancelled). Only `معتمدة` is counted anywhere.
+- Sales lines: `SalesInvoiceItemModel` stores ProductId / PartNumber / Barcode / ProductName / Quantity / UnitPrice and **no unit cost at sale time** → COGS is **ESTIMATED** from the product's current `Products.PurchasePrice`. A visible Arabic warning ("التكلفة تقديرية") is shown. Schema and invoice logic were **not** changed.
+- Returns: `SalesReturnModel.Status` (`مسودة`/`معتمدة`) with `TotalAmount`; per-line `ItemCondition` — "صالح للبيع" (restocked) vs "تالف" (damaged → `DamagedQuantity`, not restocked) vs "استبعاد نهائي من المخزون". Only sellable returns reduce COGS.
+- Expenses: `ExpenseModel.IsCancelled` + `CancellationReason`/`CancellationDate`; cancelled rows are excluded from every total.
+- No chart library and no export/print library exist → **tables only, no chart** (a note is displayed in the UI). No test project exists on `main` → no tests added, no packages added.
+
+### Formulas implemented (money = decimal, rounded only at presentation)
+- Net sales = Σ(`SubTotal − Discount`) of `معتمدة` invoices − Σ(`TotalAmount`) of `معتمدة` returns, in the period.
+- COGS = Σ(qty × current `PurchasePrice`) over posted invoice lines − Σ(qty × same price) over **sellable** returned lines → **estimated**, not exact.
+- Gross profit = Net sales − COGS. Net profit = Gross profit − Σ(active, non-cancelled expenses in the period).
+- Previous period = identical-length window immediately before the selected period; amount and % change shown.
+- Date boundaries are **inclusive start / exclusive next-day end** (a full day is never cut off).
+
+### Files
+- New: `Services/IReportsService.cs`, `Services/SqliteReportsService.cs`, `Models/ProfitSummaryModel.cs`, `Models/SalesDailyReportRow.cs`, `Models/TopProductReportRow.cs`, `Models/CustomerSalesReportRow.cs`, `Models/ExpenseReportModel.cs`, `ViewModels/ReportsViewModel.cs`, `Views/ReportsView.xaml` (+ `.xaml.cs`).
+- Modified: `App.xaml` (DataTemplate), `ViewModels/MainViewModel.cs` (navigation branch + field).
+- No `.db` touched, no schema change, no new packages, calculations live in the reports service (MVVM).
+
+### Build
+`dotnet build CarPartManager.csproj` → **Build succeeded, 0 Warning(s), 0 Error(s)**.
+
+### TODO — Part B
+- Add more report tabs (the `TabControl` + `SelectedTabIndex` binding is already in place).
+- Storing a real unit cost on each sales line in a future task would turn COGS from estimated into exact.
+
+---
+
+## Appendix — Previous task (2026-10-24): Expenses module — COMPLETED
+
+### 1. Inspect-first findings
 
 - **The Expenses screen was an empty placeholder**: `MainViewModel.NavigateTo` fell through to
   `PlaceholderViewModel` for tag `"Expenses"`; no `ExpensesViewModel`/`ExpensesView` existed.
