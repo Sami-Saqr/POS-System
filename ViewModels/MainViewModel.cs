@@ -61,6 +61,7 @@ namespace CarPartManager.ViewModels
         private readonly ReturnsViewModel _returnsViewModel;
         private readonly CustomersViewModel _customersViewModel;
         private readonly ExpensesViewModel _expensesViewModel;
+        private readonly ReportsViewModel _reportsViewModel;
         private readonly Dictionary<string, PlaceholderViewModel> _placeholderCache = new();
 
         public MainViewModel()
@@ -76,6 +77,7 @@ namespace CarPartManager.ViewModels
             _returnsViewModel = new ReturnsViewModel();
             _customersViewModel = new CustomersViewModel();
             _expensesViewModel = new ExpensesViewModel(currentUser: CurrentUser);
+            _reportsViewModel = new ReportsViewModel();
             _currentViewModel = _dashboardViewModel;
 
             NavigationItems = new ObservableCollection<NavItem>
@@ -197,6 +199,13 @@ namespace CarPartManager.ViewModels
                 return;
             }
 
+            if (selectedItem.Tag == "Reports")
+            {
+                _ = _reportsViewModel.LoadAllAsync();
+                CurrentViewModel = _reportsViewModel;
+                return;
+            }
+
             if (!_placeholderCache.TryGetValue(selectedItem.Tag, out var placeholder))
             {
                 var desc = selectedItem.Tag switch
@@ -206,7 +215,6 @@ namespace CarPartManager.ViewModels
                     "PurchaseInvoices" => "سجل فواتير المشتريات: تتبع فواتير الوكلاء وموردي قطع الغيار، ومطابقة الكميات المستلمة في المستودع.",
                     "Customers" => "سجل العملاء والورش: إدارة بيانات العملاء الأفراد والورش الفنية ومراكز الصيانة وحسابات الديون والآجل.",
                     "Suppliers" => "سجل الموردين والشركات: دمج بيانات وكلاء القطع وشركات الاستيراد وأرصدة المستحقات والدفعات.",
-                    "Reports" => "التقارير والإحصائيات: كشوف الأرباح والخسائر، حركة المبيعات، تقارير ضريبة القيمة المضافة، وتقييم بضاعة آخر المدة.",
                     _ => "سيتم تطوير وبرمجة هذه الشاشة وربطها بقاعدة البيانات في المراحل القادمة."
                 };
 

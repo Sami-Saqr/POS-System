@@ -1,0 +1,676 @@
+<UserControl x:Class="CarPartManager.Views.ReportsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:viewmodels="clr-namespace:CarPartManager.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=viewmodels:ReportsViewModel}"
+             d:DesignHeight="820" d:DesignWidth="1360"
+             FlowDirection="RightToLeft">
+
+    <UserControl.Resources>
+        <!-- نمط خلايا النصوص: اقتطاع + تلميح، دون تعطيل أي ربط -->
+        <Style x:Key="ReportCellTextStyle" TargetType="TextBlock">
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=Text}" />
+        </Style>
+
+        <!-- نمط صفوف التفصيل في ملخص الأرباح -->
+        <Style x:Key="BreakdownRowStyle" TargetType="Border">
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="Padding" Value="4,9" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <!-- الترويسة -->
+            <RowDefinition Height="Auto" />
+            <!-- المرشّح التاريخي العام -->
+            <RowDefinition Height="Auto" />
+            <!-- التبويبات وشريط الحالة -->
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ═══════════ الترويسة ═══════════ -->
+        <Border Grid.Row="0" Padding="28,20,28,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="التقارير المحاسبية"
+                               FontSize="22" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="تقارير للقراءة فقط — ملخص الأرباح، المبيعات، والمصروفات — مع مرشّح تاريخي عام لكل التبويبات"
+                               FontSize="13"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,4,0,0"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RefreshCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+                                  Fill="White" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" />
+                            <TextBlock Text="تحديث التقارير" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ═══════════ المرشّح التاريخي العام ═══════════ -->
+        <Border Grid.Row="1" Margin="28,16,28,0" Style="{StaticResource ContentPanelCardStyle}" Padding="18,14">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="الفترة:" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+
+                <ComboBox Grid.Column="1" Width="130" Height="34" Margin="0,0,16,0"
+                          ItemsSource="{Binding PeriodPresets}"
+                          SelectedItem="{Binding SelectedPreset, Mode=TwoWay}"
+                          FontFamily="{StaticResource AppFontFamily}"
+                          VerticalContentAlignment="Center" />
+
+                <DatePicker Grid.Column="2" Width="140" Height="34" Margin="0,0,8,0"
+                            SelectedDate="{Binding FromDate, Mode=TwoWay}"
+                            IsEnabled="{Binding IsCustomRange}"
+                            VerticalContentAlignment="Center"
+                            ToolTip="تاريخ البداية (شامل)" />
+
+                <TextBlock Grid.Column="3" Text="إلى" FontSize="13" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0" />
+
+                <DatePicker Grid.Column="4" Width="140" Height="34" Margin="0,0,16,0"
+                            SelectedDate="{Binding ToDate, Mode=TwoWay}"
+                            IsEnabled="{Binding IsCustomRange}"
+                            VerticalContentAlignment="Center"
+                            ToolTip="تاريخ النهاية (شامل)" />
+
+                <Button Grid.Column="5" Style="{StaticResource OutlineButtonStyle}" Command="{Binding RefreshCommand}" Margin="0,0,16,0">
+                    <TextBlock Text="تطبيق" />
+                </Button>
+
+                <TextBlock Grid.Column="6" Text="{Binding PeriodText}" FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding PeriodText}" />
+            </Grid>
+        </Border>
+
+        <!-- ═══════════ التبويبات + شريط الحالة ═══════════ -->
+        <Grid Grid.Row="2" Margin="28,16,28,24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TabControl Grid.Row="0" Style="{StaticResource CleanTabControlStyle}"
+                        SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+
+                <!-- ══════════ التبويب 1: ملخص الأرباح ══════════ -->
+                <TabItem Header="ملخص الأرباح">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,14,0,0">
+                        <StackPanel>
+
+                            <!-- بطاقات الملخص -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="صافي المبيعات" FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                        <TextBlock Text="{Binding NetSalesText}" FontSize="20" FontWeight="Bold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,0"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding NetSalesText}" />
+                                        <TextBlock Text="{Binding NetSalesComparisonText}" FontSize="11"
+                                                   Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="تكلفة البضاعة المبيعة" FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                        <TextBlock Text="{Binding CogsText}" FontSize="20" FontWeight="Bold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,0"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding CogsText}" />
+                                        <TextBlock Text="{Binding ReturnedCogsReductionText, StringFormat=بعد خصم تكلفة المرتجعات الصالحة للبيع: {0}}"
+                                                   FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="4" Style="{StaticResource MetricCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="الربح الإجمالي" FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                        <TextBlock Text="{Binding GrossProfitText}" FontSize="20" FontWeight="Bold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,0"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding GrossProfitText}" />
+                                        <TextBlock Text="{Binding GrossProfitComparisonText}" FontSize="11"
+                                                   Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="6" Style="{StaticResource MetricCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="المصروفات (نشطة)" FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                        <TextBlock Text="{Binding ExpensesText}" FontSize="20" FontWeight="Bold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,0"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding ExpensesText}" />
+                                        <TextBlock Text="{Binding ExpensesComparisonText}" FontSize="11"
+                                                   Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="8" Style="{StaticResource MetricCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="صافي الربح" FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                        <TextBlock Text="{Binding NetProfitText}" FontSize="20" FontWeight="Bold"
+                                                   Foreground="{Binding NetProfitColor}" Margin="0,10,0,0"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding NetProfitText}" />
+                                        <TextBlock Text="{Binding NetProfitComparisonText}" FontSize="11"
+                                                   Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <!-- تنبيه تعارض البيانات (يظهر فقط عند وجود فرق بين الجدول اليومي والبطاقة) -->
+                            <Border Margin="0,16,0,0" CornerRadius="8" Padding="14,10"
+                                    Background="{StaticResource AlertRedLightBrush}"
+                                    BorderBrush="{StaticResource AlertRedBrush}" BorderThickness="1"
+                                    Visibility="{Binding HasDataWarning, Converter={StaticResource BoolToVisConverter}}">
+                                <TextBlock Text="{Binding DataWarningText}" FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{StaticResource AlertRedBrush}" />
+                            </Border>
+
+                            <!-- تنبيه التكلفة التقديرية -->
+                            <Border Margin="0,16,0,0" CornerRadius="8" Padding="14,10"
+                                    Background="#FFFBEB"
+                                    BorderBrush="{StaticResource WarningAmberBrush}" BorderThickness="1"
+                                    Visibility="{Binding IsCogsEstimated, Converter={StaticResource BoolToVisConverter}}">
+                                <TextBlock Text="{Binding CogsNoteText}" FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{StaticResource WarningAmberBrush}" />
+                            </Border>
+
+                            <!-- تفصيل الحساب -->
+                            <Border Margin="0,16,0,0" Style="{StaticResource ContentPanelCardStyle}" Padding="22,16">
+                                <StackPanel>
+                                    <TextBlock Text="تفصيل الحساب" FontSize="15" FontWeight="Bold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8" />
+
+                                    <Border Style="{StaticResource BreakdownRowStyle}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="إجمالي المبيعات قبل الخصم" FontSize="13"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding GrossSalesText}" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Style="{StaticResource BreakdownRowStyle}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="الخصومات" FontSize="13"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding DiscountsText}" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Style="{StaticResource BreakdownRowStyle}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="مرتجعات المبيعات (معتمدة)" FontSize="13"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding SalesReturnsText}" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Style="{StaticResource BreakdownRowStyle}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="صافي المبيعات = الإجمالي − الخصومات − المرتجعات" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding NetSalesText}" FontSize="13"
+                                                       FontWeight="Bold" Foreground="{StaticResource PrimaryBlueBrush}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Style="{StaticResource BreakdownRowStyle}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="تكلفة البضاعة المبيعة (صافي)" FontSize="13"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding CogsText}" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Style="{StaticResource BreakdownRowStyle}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="منها: تكلفة المرتجعات الصالحة للبيع (مخصومة)" FontSize="13"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding ReturnedCogsReductionText}" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Style="{StaticResource BreakdownRowStyle}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="الربح الإجمالي = صافي المبيعات − التكلفة" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding GrossProfitText}" FontSize="13"
+                                                       FontWeight="Bold" Foreground="{StaticResource SalesGreenBrush}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Style="{StaticResource BreakdownRowStyle}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="المصروفات النشطة" FontSize="13"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding ExpensesText}" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Padding="4,9">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="صافي الربح = الربح الإجمالي − المصروفات" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding NetProfitText}" FontSize="14"
+                                                       FontWeight="Bold" Foreground="{Binding NetProfitColor}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <TextBlock Text="{Binding InvoiceCountText}" FontSize="12"
+                                               Foreground="{StaticResource TextMutedBrush}" Margin="4,10,4,0" />
+
+                                    <TextBlock Text="{Binding ReturnsNoteText}" FontSize="11" TextWrapping="Wrap"
+                                               Foreground="{StaticResource TextMutedBrush}" Margin="4,8,4,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- حالة فارغة -->
+                            <Border Margin="0,16,0,0" Padding="24" CornerRadius="12"
+                                    Background="{StaticResource CardBackgroundBrush}"
+                                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                    Visibility="{Binding ShowProfitEmptyState, Converter={StaticResource BoolToVisConverter}}">
+                                <TextBlock Text="لا توجد بيانات في هذه الفترة" FontSize="14" HorizontalAlignment="Center"
+                                           Foreground="{StaticResource TextMutedBrush}" />
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- ══════════ التبويب 2: تقرير المبيعات ══════════ -->
+                <TabItem Header="تقرير المبيعات">
+                    <Grid Margin="0,14,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="2*" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="3*" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Text="{Binding ChartsNoteText}" FontSize="11"
+                                   Foreground="{StaticResource TextMutedBrush}" Margin="2,0,2,8" TextWrapping="Wrap" />
+
+                        <!-- الجدول اليومي -->
+                        <Border Grid.Row="1" Style="{StaticResource ContentPanelCardStyle}" Padding="14">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Text="المبيعات اليومية (بالجنيه المصري)" FontSize="14" FontWeight="Bold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" Margin="4,0,4,10" />
+
+                                <DataGrid Grid.Row="1" Style="{StaticResource CleanDataGridStyle}"
+                                          ItemsSource="{Binding DailySales}"
+                                          AutoGenerateColumns="False" IsReadOnly="True"
+                                          CanUserAddRows="False" CanUserDeleteRows="False"
+                                          SelectionMode="Single" RowHeight="40"
+                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                          ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="التاريخ" Binding="{Binding DayText}" Width="140"
+                                                            ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                        <DataGridTextColumn Header="عدد الفواتير" Binding="{Binding InvoiceCount}" Width="110"
+                                                            ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                        <DataGridTextColumn Header="الإجمالي" Binding="{Binding Total, StringFormat={}{0:N2}}" Width="*"
+                                                            ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                        <DataGridTextColumn Header="الخصم" Binding="{Binding Discount, StringFormat={}{0:N2}}" Width="*"
+                                                            ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                        <DataGridTextColumn Header="المرتجعات" Binding="{Binding ReturnsTotal, StringFormat={}{0:N2}}" Width="*"
+                                                            ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                        <DataGridTextColumn Header="الصافي" Binding="{Binding Net, StringFormat={}{0:N2}}" Width="*"
+                                                            ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+
+                                <Border Grid.Row="0" Grid.RowSpan="2" Background="{StaticResource CardBackgroundBrush}"
+                                        Visibility="{Binding ShowSalesEmptyState, Converter={StaticResource BoolToVisConverter}}">
+                                    <TextBlock Text="لا توجد بيانات في هذه الفترة" FontSize="14" HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock Grid.Row="2" FontSize="12" Margin="4,8,4,10"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis">
+                            <Run Text="مجموع عمود الصافي في الجدول اليومي: " />
+                            <Run Text="{Binding DailySalesTotalText, Mode=OneWay}" FontWeight="Bold" />
+                        </TextBlock>
+
+                        <!-- أفضل الأصناف + المبيعات حسب العميل -->
+                        <Grid Grid.Row="3">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="14" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="14" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Style="{StaticResource ContentPanelCardStyle}" Padding="14">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="أفضل الأصناف بالكمية" FontSize="14" FontWeight="Bold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="4,0,4,10" />
+                                    <DataGrid Grid.Row="1" Style="{StaticResource CleanDataGridStyle}"
+                                              ItemsSource="{Binding TopProductsByQuantity}"
+                                              AutoGenerateColumns="False" IsReadOnly="True"
+                                              CanUserAddRows="False" CanUserDeleteRows="False"
+                                              SelectionMode="Single" RowHeight="38"
+                                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="الصنف" Binding="{Binding ProductName}" Width="*"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="الكمية" Binding="{Binding QuantitySold}" Width="80"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="القيمة" Binding="{Binding SalesValue, StringFormat={}{0:N2}}" Width="110"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+
+                            <Border Grid.Column="2" Style="{StaticResource ContentPanelCardStyle}" Padding="14">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="أفضل الأصناف بالقيمة" FontSize="14" FontWeight="Bold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="4,0,4,10" />
+                                    <DataGrid Grid.Row="1" Style="{StaticResource CleanDataGridStyle}"
+                                              ItemsSource="{Binding TopProductsByValue}"
+                                              AutoGenerateColumns="False" IsReadOnly="True"
+                                              CanUserAddRows="False" CanUserDeleteRows="False"
+                                              SelectionMode="Single" RowHeight="38"
+                                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="الصنف" Binding="{Binding ProductName}" Width="*"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="الكمية" Binding="{Binding QuantitySold}" Width="80"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="القيمة" Binding="{Binding SalesValue, StringFormat={}{0:N2}}" Width="110"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+
+                            <Border Grid.Column="4" Style="{StaticResource ContentPanelCardStyle}" Padding="14">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="المبيعات حسب العميل" FontSize="14" FontWeight="Bold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="4,0,4,10" />
+                                    <DataGrid Grid.Row="1" Style="{StaticResource CleanDataGridStyle}"
+                                              ItemsSource="{Binding CustomerSales}"
+                                              AutoGenerateColumns="False" IsReadOnly="True"
+                                              CanUserAddRows="False" CanUserDeleteRows="False"
+                                              SelectionMode="Single" RowHeight="38"
+                                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="العميل" Binding="{Binding CustomerName}" Width="*"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="فواتير" Binding="{Binding InvoiceCount}" Width="70"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="الصافي" Binding="{Binding NetSales, StringFormat={}{0:N2}}" Width="110"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="النسبة" Binding="{Binding SharePercent, StringFormat={}{0:N1}٪}" Width="80"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <!-- ══════════ التبويب 3: تقرير المصروفات ══════════ -->
+                <TabItem Header="تقرير المصروفات">
+                    <Grid Margin="0,14,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="14" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="14" />
+                                <ColumnDefinition Width="2*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Style="{StaticResource MetricCardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="إجمالي المصروفات" FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding ExpenseTotalText}" FontSize="20" FontWeight="Bold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,0"
+                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding ExpenseTotalText}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="2" Style="{StaticResource MetricCardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="عدد المصروفات" FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding ExpenseCountText}" FontSize="16" FontWeight="Bold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,0"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="4" Style="{StaticResource MetricCardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="المقارنة بالفترة السابقة المماثلة" FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding ExpenseComparisonText}" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,0"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="14" />
+                                <ColumnDefinition Width="2*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Style="{StaticResource ContentPanelCardStyle}" Padding="14">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="المصروفات حسب التصنيف" FontSize="14" FontWeight="Bold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="4,0,4,10" />
+                                    <DataGrid Grid.Row="1" Style="{StaticResource CleanDataGridStyle}"
+                                              ItemsSource="{Binding ExpenseCategories}"
+                                              AutoGenerateColumns="False" IsReadOnly="True"
+                                              CanUserAddRows="False" CanUserDeleteRows="False"
+                                              SelectionMode="Single" RowHeight="42"
+                                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="التصنيف" Binding="{Binding CategoryName}" Width="*"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="الإجمالي" Binding="{Binding Total, StringFormat={}{0:N2}}" Width="130"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="العدد" Binding="{Binding Count}" Width="70"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="النسبة" Binding="{Binding SharePercent, StringFormat={}{0:N1}٪}" Width="80"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+
+                            <Border Grid.Column="2" Style="{StaticResource ContentPanelCardStyle}" Padding="14">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="القائمة التفصيلية (المصروفات الملغاة مستبعدة)" FontSize="14" FontWeight="Bold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="4,0,4,10" />
+                                    <DataGrid Grid.Row="1" Style="{StaticResource CleanDataGridStyle}"
+                                              ItemsSource="{Binding ExpenseDetails}"
+                                              AutoGenerateColumns="False" IsReadOnly="True"
+                                              CanUserAddRows="False" CanUserDeleteRows="False"
+                                              SelectionMode="Single" RowHeight="42"
+                                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="التاريخ" Binding="{Binding ExpenseDateText}" Width="120"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="التصنيف" Binding="{Binding CategoryName}" Width="150"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="البيان" Binding="{Binding Description}" Width="*"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="المبلغ" Binding="{Binding Amount, StringFormat={}{0:N2}}" Width="120"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="طريقة الدفع" Binding="{Binding PaymentMethod}" Width="120"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="مرجعي" Binding="{Binding ReferenceNumber}" Width="110"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                            <DataGridTextColumn Header="المستخدم" Binding="{Binding CreatedBy}" Width="130"
+                                                                ElementStyle="{StaticResource ReportCellTextStyle}" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+
+                                    <Border Grid.Row="0" Grid.RowSpan="2" Background="{StaticResource CardBackgroundBrush}"
+                                            Visibility="{Binding ShowExpensesEmptyState, Converter={StaticResource BoolToVisConverter}}">
+                                        <TextBlock Text="لا توجد بيانات في هذه الفترة" FontSize="14" HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}" />
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+
+            <!-- شريط الحالة / الخطأ -->
+            <Border Grid.Row="1" Margin="0,14,0,0" CornerRadius="8" Padding="14,9"
+                    Background="{Binding StatusBackground}"
+                    Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisConverter}}">
+                <TextBlock Text="{Binding StatusMessage}" FontSize="12" TextWrapping="Wrap"
+                           Foreground="{Binding StatusForeground}"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding StatusMessage}" />
+            </Border>
+
+            <!-- غطاء التحميل (لا يعتمد على إخفاء الجداول بربط محلي) -->
+            <Border Grid.Row="0" Background="#F2FFFFFF"
+                    Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisConverter}}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="جارٍ تحميل التقارير..." FontSize="15" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" />
+                    <TextBlock Text="يتم التجميع داخل قاعدة البيانات — شاشة للقراءة فقط" FontSize="12"
+                               Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Center" Margin="0,6,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
