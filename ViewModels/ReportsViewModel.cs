@@ -25,6 +25,9 @@ namespace CarPartManager.ViewModels
         /// <summary>يُستخدم لإهمال نتائج التحميل القديمة عند تغيير المرشّح بسرعة</summary>
         private int _loadToken;
 
+        /// <summary>يمنع إعادة تحميل تبويب تقييم المخزون قبل أول تحميل كامل للشاشة</summary>
+        private bool _hasLoadedOnce;
+
         public ReportsViewModel(IReportsService? reportsService = null)
         {
             _reportsService = reportsService ?? new SqliteReportsService();
@@ -118,6 +121,10 @@ namespace CarPartManager.ViewModels
                     OnPropertyChanged(nameof(ShowProfitEmptyState));
                     OnPropertyChanged(nameof(ShowSalesEmptyState));
                     OnPropertyChanged(nameof(ShowExpensesEmptyState));
+                    OnPropertyChanged(nameof(ShowPurchasesEmptyState));
+                    OnPropertyChanged(nameof(ShowInventoryEmptyState));
+                    OnPropertyChanged(nameof(ShowCustomerDebtsEmptyState));
+                    OnPropertyChanged(nameof(ShowItemProfitEmptyState));
                 }
             }
         }
@@ -248,6 +255,115 @@ namespace CarPartManager.ViewModels
         public string ExpenseComparisonText { get => _expenseComparisonText; private set => SetProperty(ref _expenseComparisonText, value); }
         private string _expenseComparisonText = string.Empty;
 
+        // ── تبويب المشتريات ───────────────────────────────────────────────────
+
+        public ObservableCollection<PurchaseDailyReportRow> PurchasesDaily { get; } = new();
+        public ObservableCollection<SupplierPurchaseReportRow> PurchasesBySupplier { get; } = new();
+        public ObservableCollection<TopProductReportRow> PurchasesTopProducts { get; } = new();
+
+        public string PurchasesTotalText { get => _purchasesTotalText; private set => SetProperty(ref _purchasesTotalText, value); }
+        private string _purchasesTotalText = "0.00 ج.م";
+        public string PurchasesInvoiceCountText { get => _purchasesInvoiceCountText; private set => SetProperty(ref _purchasesInvoiceCountText, value); }
+        private string _purchasesInvoiceCountText = "0 فاتورة";
+        public string PurchasesComparisonText { get => _purchasesComparisonText; private set => SetProperty(ref _purchasesComparisonText, value); }
+        private string _purchasesComparisonText = string.Empty;
+        public string PurchasesDailyTotalText { get => _purchasesDailyTotalText; private set => SetProperty(ref _purchasesDailyTotalText, value); }
+        private string _purchasesDailyTotalText = "0.00 ج.م";
+
+        private bool _hasPurchasesData;
+        public bool HasPurchasesData
+        {
+            get => _hasPurchasesData;
+            set
+            {
+                if (SetProperty(ref _hasPurchasesData, value))
+                    OnPropertyChanged(nameof(ShowPurchasesEmptyState));
+            }
+        }
+
+        public bool ShowPurchasesEmptyState => !IsLoading && PurchasesDaily.Count == 0;
+
+        private string _purchasesSupplierNoteText = string.Empty;
+        public string PurchasesSupplierNoteText { get => _purchasesSupplierNoteText; private set => SetProperty(ref _purchasesSupplierNoteText, value); }
+
+        // ── تبويب تقييم المخزون (الحالة الحالية — لا يتأثر بالمرشّح التاريخي) ──
+
+        public ObservableCollection<InventoryValuationRow> InventoryRows { get; } = new();
+        public ObservableCollection<InventoryValuationRow> InventoryLowStock { get; } = new();
+        public ObservableCollection<InventoryValuationRow> InventoryOutOfStock { get; } = new();
+        public ObservableCollection<InventoryValuationRow> InventoryStagnant { get; } = new();
+        public ObservableCollection<InventoryValuationRow> InventoryTopByValue { get; } = new();
+
+        /// <summary>خيارات عدد الأيام لتعريف الصنف الراكد (قابل للتعديل)</summary>
+        public ObservableCollection<int> StagnantDayOptions { get; } = new() { 30, 60, 90, 180 };
+
+        private int _stagnantDays = 60;
+        public int StagnantDays
+        {
+            get => _stagnantDays;
+            set
+            {
+                if (value <= 0) value = 60;
+                if (SetProperty(ref _stagnantDays, value))
+                    _ = LoadInventoryValuationAsync();
+            }
+        }
+
+        public string InventoryTotalValueText { get => _inventoryTotalValueText; private set => SetProperty(ref _inventoryTotalValueText, value); }
+        private string _inventoryTotalValueText = "0.00 ج.م";
+        public string InventoryProductCountText { get => _inventoryProductCountText; private set => SetProperty(ref _inventoryProductCountText, value); }
+        private string _inventoryProductCountText = "0 صنف";
+        public string InventoryLowStockText { get => _inventoryLowStockText; private set => SetProperty(ref _inventoryLowStockText, value); }
+        private string _inventoryLowStockText = "0 صنف";
+        public string InventoryOutOfStockText { get => _inventoryOutOfStockText; private set => SetProperty(ref _inventoryOutOfStockText, value); }
+        private string _inventoryOutOfStockText = "0 صنف";
+        public string InventoryStagnantText { get => _inventoryStagnantText; private set => SetProperty(ref _inventoryStagnantText, value); }
+        private string _inventoryStagnantText = "0 صنف";
+
+        public string InventoryStateNoteText { get => _inventoryStateNoteText; private set => SetProperty(ref _inventoryStateNoteText, value); }
+        private string _inventoryStateNoteText = "هذا التقرير يعرض الحالة الحالية للمخزون ولا يتأثر بالمرشّح التاريخي.";
+
+        public string InventoryComparisonText { get => _inventoryComparisonText; private set => SetProperty(ref _inventoryComparisonText, value); }
+        private string _inventoryComparisonText = string.Empty;
+
+        public bool ShowInventoryEmptyState => !IsLoading && InventoryRows.Count == 0;
+
+        // ── تبويب مديونيات العملاء (الحالة الحالية) ───────────────────────────
+
+        public ObservableCollection<CustomerDebtRow> CustomerDebtRows { get; } = new();
+
+        public string CustomerDebtTotalText { get => _customerDebtTotalText; private set => SetProperty(ref _customerDebtTotalText, value); }
+        private string _customerDebtTotalText = "0.00 ج.م";
+        public string CustomerDebtCountText { get => _customerDebtCountText; private set => SetProperty(ref _customerDebtCountText, value); }
+        private string _customerDebtCountText = "0 عميل";
+        public string CustomerDebtNoteText { get => _customerDebtNoteText; private set => SetProperty(ref _customerDebtNoteText, value); }
+        private string _customerDebtNoteText = string.Empty;
+
+        public bool ShowCustomerDebtsEmptyState => !IsLoading && CustomerDebtRows.Count == 0;
+
+        // ── تبويب ربحية الأصناف ───────────────────────────────────────────────
+
+        public ObservableCollection<ItemProfitabilityRow> ItemProfitRows { get; } = new();
+        public ObservableCollection<ItemProfitabilityRow> ItemProfitBest { get; } = new();
+        public ObservableCollection<ItemProfitabilityRow> ItemProfitWorst { get; } = new();
+
+        public string ItemProfitSalesText { get => _itemProfitSalesText; private set => SetProperty(ref _itemProfitSalesText, value); }
+        private string _itemProfitSalesText = "0.00 ج.م";
+        public string ItemProfitCostText { get => _itemProfitCostText; private set => SetProperty(ref _itemProfitCostText, value); }
+        private string _itemProfitCostText = "0.00 ج.م";
+        public string ItemProfitTotalText { get => _itemProfitTotalText; private set => SetProperty(ref _itemProfitTotalText, value); }
+        private string _itemProfitTotalText = "0.00 ج.م";
+        public string ItemProfitMarginText { get => _itemProfitMarginText; private set => SetProperty(ref _itemProfitMarginText, value); }
+        private string _itemProfitMarginText = "—";
+
+        public string ItemProfitCrossCheckText { get => _itemProfitCrossCheckText; private set => SetProperty(ref _itemProfitCrossCheckText, value); }
+        private string _itemProfitCrossCheckText = string.Empty;
+
+        public string ItemProfitNoteText { get => _itemProfitNoteText; private set => SetProperty(ref _itemProfitNoteText, value); }
+        private string _itemProfitNoteText = string.Empty;
+
+        public bool ShowItemProfitEmptyState => !IsLoading && ItemProfitRows.Count == 0;
+
         // ── التحميل ───────────────────────────────────────────────────────────
 
         /// <summary>يُستدعى عند كل تنقل إلى الشاشة أو تغيير للمرشّح</summary>
@@ -268,19 +384,32 @@ namespace CarPartManager.ViewModels
                 var topTask = _reportsService.GetTopProductsAsync(from, toExclusive, 10);
                 var customersTask = _reportsService.GetSalesByCustomerAsync(from, toExclusive, 20);
                 var expensesTask = _reportsService.GetExpensesReportAsync(from, toExclusive);
+                var purchasesTask = _reportsService.GetPurchasesReportAsync(from, toExclusive);
+                var inventoryTask = _reportsService.GetInventoryValuationAsync(StagnantDays, 10);
+                var debtsTask = _reportsService.GetCustomerDebtsAsync();
+                var itemsTask = _reportsService.GetItemProfitabilityAsync(from, toExclusive, 10);
 
-                await Task.WhenAll(summaryTask, dailyTask, topTask, customersTask, expensesTask);
+                await Task.WhenAll(summaryTask, dailyTask, topTask, customersTask, expensesTask,
+                                   purchasesTask, inventoryTask, debtsTask, itemsTask);
 
                 if (token != _loadToken) return;
 
                 ApplySummary(summaryTask.Result);
                 ApplySalesReport(dailyTask.Result, topTask.Result, customersTask.Result);
                 ApplyExpensesReport(expensesTask.Result);
+                ApplyPurchasesReport(purchasesTask.Result);
+                ApplyInventoryValuation(inventoryTask.Result);
+                ApplyCustomerDebts(debtsTask.Result);
+                ApplyItemProfitability(itemsTask.Result);
+
                 CrossCheckDailyTotal(summaryTask.Result.NetSales);
+                CrossCheckItemProfit(summaryTask.Result.GrossProfit, itemsTask.Result);
 
                 PeriodText = $"الفترة: من {from:yyyy-MM-dd} إلى {toExclusive.AddDays(-1):yyyy-MM-dd}";
 
                 SetStatus($"تم تحديث التقارير — فواتير البيع المعتمدة: {summaryTask.Result.InvoiceCount} — مصروفات الفترة: {ExpenseTotalText}");
+
+                _hasLoadedOnce = true;
             }
             catch (Exception ex)
             {
@@ -432,11 +561,44 @@ namespace CarPartManager.ViewModels
 
             if (difference > 0.01m)
             {
-                HasDataWarning = true;
-                DataWarningText =
+                AppendDataWarning(
                     $"تنبيه تعارض بيانات: مجموع الصافي في التقرير اليومي ({FormatMoney(dailyNet)}) " +
-                    $"لا يطابق بطاقة صافي المبيعات ({FormatMoney(summaryNetSales)}) — الفرق {FormatMoney(difference)}.";
+                    $"لا يطابق بطاقة صافي المبيعات ({FormatMoney(summaryNetSales)}) — الفرق {FormatMoney(difference)}.");
             }
+        }
+
+        /// <summary>
+        /// يدقّق تطابق إجمالي ربح الأصناف مع الربح الإجمالي في ملخص الأرباح لنفس الفترة.
+        /// يُحتسب ربح الصنف على أساس: (قيمة البيع − مرتجعات البيع) − (تكلفة المبيعات − تكلفة المرتجعات الصالحة للبيع)،
+        /// مع توزيع خصم الفاتورة على بنودها بنسبة قيمة البند — لذلك يجب أن يتطابق الإجماليان.
+        /// </summary>
+        private void CrossCheckItemProfit(decimal summaryGrossProfit, ItemProfitabilityModel itemReport)
+        {
+            var difference = Math.Abs(itemReport.TotalProfit - summaryGrossProfit);
+
+            if (difference <= 0.01m)
+            {
+                ItemProfitCrossCheckText =
+                    $"تدقيق متقاطع: إجمالي ربح الأصناف ({FormatMoney(itemReport.TotalProfit)}) " +
+                    $"يطابق الربح الإجمالي في ملخص الأرباح ({FormatMoney(summaryGrossProfit)}).";
+                return;
+            }
+
+            ItemProfitCrossCheckText =
+                $"تدقيق متقاطع: إجمالي ربح الأصناف ({FormatMoney(itemReport.TotalProfit)}) " +
+                $"لا يطابق الربح الإجمالي في ملخص الأرباح ({FormatMoney(summaryGrossProfit)}) — الفرق {FormatMoney(difference)}. " +
+                "السبب المحتمل: خصم مسجّل على فاتورة بإجمالي صفر، أو مرتجع بقيمة لا تساوي مجموع بنوده، أو بيانات فاتورة غير متسقة.";
+
+            AppendDataWarning(
+                $"تنبيه تعارض بيانات: إجمالي ربح الأصناف ({FormatMoney(itemReport.TotalProfit)}) " +
+                $"لا يطابق الربح الإجمالي في ملخص الأرباح ({FormatMoney(summaryGrossProfit)}) — الفرق {FormatMoney(difference)}. " +
+                "راجع تفصيل تبويب ربحية الأصناف.");
+        }
+
+        private void AppendDataWarning(string message)
+        {
+            HasDataWarning = true;
+            DataWarningText = string.IsNullOrWhiteSpace(DataWarningText) ? message : $"{DataWarningText} {message}";
         }
 
         private void ApplyExpensesReport(ExpenseReportModel report)
@@ -457,6 +619,132 @@ namespace CarPartManager.ViewModels
             OnPropertyChanged(nameof(ShowExpensesEmptyState));
         }
 
+        private void ApplyPurchasesReport(PurchaseReportModel report)
+        {
+            PurchasesDaily.Clear();
+            foreach (var row in report.Daily) PurchasesDaily.Add(row);
+
+            PurchasesBySupplier.Clear();
+            foreach (var row in report.BySupplier) PurchasesBySupplier.Add(row);
+
+            PurchasesTopProducts.Clear();
+            foreach (var row in report.TopProducts) PurchasesTopProducts.Add(row);
+
+            PurchasesTotalText = FormatMoney(report.Total);
+            PurchasesInvoiceCountText = $"{report.InvoiceCount} فاتورة معتمدة";
+            PurchasesDailyTotalText = FormatMoney(PurchasesDaily.Sum(r => r.Total));
+
+            PurchasesComparisonText = report.PreviousTotal is null
+                ? "لا توجد فترة سابقة للمقارنة"
+                : FormatComparison(report.PreviousTotal.Value, report.Change, report.ChangePercent);
+
+            HasPurchasesData = report.InvoiceCount > 0;
+            PurchasesSupplierNoteText = report.HasSupplierData
+                ? string.Empty
+                : "لا توجد بيانات موردين مرتبطة بفواتير المشتريات المعتمدة في هذه الفترة، لذلك يظهر الإجمالي والفواتير دون تفصيل موردين.";
+
+            OnPropertyChanged(nameof(ShowPurchasesEmptyState));
+        }
+
+        private void ApplyInventoryValuation(InventoryValuationModel report)
+        {
+            InventoryRows.Clear();
+            foreach (var row in report.Rows) InventoryRows.Add(row);
+
+            InventoryLowStock.Clear();
+            foreach (var row in report.LowStock) InventoryLowStock.Add(row);
+
+            InventoryOutOfStock.Clear();
+            foreach (var row in report.OutOfStock) InventoryOutOfStock.Add(row);
+
+            InventoryStagnant.Clear();
+            foreach (var row in report.Stagnant) InventoryStagnant.Add(row);
+
+            InventoryTopByValue.Clear();
+            foreach (var row in report.TopByValue) InventoryTopByValue.Add(row);
+
+            // التدقيق المتقاطع: البطاقة = مجموع (الكمية المتاحة × سعر التكلفة) لكل الأصناف
+            var recomputed = InventoryRows.Sum(r => r.StockValue);
+            InventoryTotalValueText = FormatMoney(report.TotalValue);
+
+            InventoryProductCountText = $"{report.ProductCount} صنف";
+            InventoryLowStockText = $"{report.LowStockCount} صنف";
+            InventoryOutOfStockText = $"{report.OutOfStockCount} صنف";
+            InventoryStagnantText = $"{report.StagnantCount} صنف";
+            InventoryStateNoteText =
+                $"هذا التقرير يعرض الحالة الحالية للمخزون ولا يتأثر بالمرشّح التاريخي (لحظة التوليد: {report.GeneratedAt:yyyy-MM-dd HH:mm}). " +
+                $"قيمة المخزون = مجموع (الكمية المتاحة × سعر التكلفة الحالي). قيمة التالف (غير محتسبة): {FormatMoney(report.DamagedValue)}.";
+
+            if (Math.Abs(recomputed - report.TotalValue) > 0.01m)
+            {
+                AppendDataWarning(
+                    $"تنبيه تعارض بيانات: مجموع قيمة الأصناف ({FormatMoney(recomputed)}) " +
+                    $"لا يطابق إجمالي قيمة المخزون ({FormatMoney(report.TotalValue)}).");
+            }
+
+            InventoryComparisonText =
+                $"الراكد: أصناف عليها رصيد متاح وبلا مبيعات معتمدة خلال {report.StagnantDays} يوماً — عددها {report.StagnantCount}.";
+
+            OnPropertyChanged(nameof(ShowInventoryEmptyState));
+        }
+
+        private void ApplyCustomerDebts(CustomerDebtReportModel report)
+        {
+            CustomerDebtRows.Clear();
+            foreach (var row in report.Rows) CustomerDebtRows.Add(row);
+
+            CustomerDebtTotalText = FormatMoney(report.TotalDebt);
+            CustomerDebtCountText = $"{report.CustomerCount} عميل من إجمالي {report.TotalCustomers}";
+            CustomerDebtNoteText = $"لا يتأثر هذا التقرير بالمرشّح التاريخي. {report.FormulaNote}";
+
+            OnPropertyChanged(nameof(ShowCustomerDebtsEmptyState));
+        }
+
+        private void ApplyItemProfitability(ItemProfitabilityModel report)
+        {
+            ItemProfitRows.Clear();
+            foreach (var row in report.Rows) ItemProfitRows.Add(row);
+
+            ItemProfitBest.Clear();
+            foreach (var row in report.Best) ItemProfitBest.Add(row);
+
+            ItemProfitWorst.Clear();
+            foreach (var row in report.Worst) ItemProfitWorst.Add(row);
+
+            ItemProfitSalesText = FormatMoney(report.TotalSalesValue);
+            ItemProfitCostText = FormatMoney(report.TotalCost);
+            ItemProfitTotalText = FormatMoney(report.TotalProfit);
+            ItemProfitMarginText = report.TotalMarginPercent.HasValue ? $"{report.TotalMarginPercent.Value:N1}٪" : "—";
+
+            ItemProfitNoteText = report.IsCogsEstimated
+                ? "التكلفة تقديرية: بنود فواتير البيع لا تُخزّن تكلفة الوحدة وقت البيع، لذا تُحتسب التكلفة بسعر التكلفة الحالي للأصناف."
+                : string.Empty;
+
+            OnPropertyChanged(nameof(ShowItemProfitEmptyState));
+        }
+
+        /// <summary>يُحدّث تبويب تقييم المخزون وحده عند تغيير عدد أيام الركود (لا يحتاج مرشّحاً تاريخياً).</summary>
+        private async Task LoadInventoryValuationAsync()
+        {
+            if (!_hasLoadedOnce) return;
+
+            var token = _loadToken;
+
+            try
+            {
+                var report = await _reportsService.GetInventoryValuationAsync(StagnantDays, 10);
+                if (token != _loadToken) return;
+
+                ApplyInventoryValuation(report);
+                SetStatus($"تم تحديث تقييم المخزون — الأصناف الراكدة: بلا مبيعات خلال {StagnantDays} يوماً.");
+            }
+            catch (Exception ex)
+            {
+                if (token != _loadToken) return;
+                SetStatus($"تعذر تحديث تقييم المخزون: {ex.Message}", error: true);
+            }
+        }
+
         private void ClearAll()
         {
             HasProfitData = false;
@@ -469,8 +757,26 @@ namespace CarPartManager.ViewModels
             DailySalesTotalText = FormatMoney(0m);
             ExpenseTotalText = FormatMoney(0m);
             ExpenseCountText = "0 مصروف";
+
+            PurchasesDaily.Clear();
+            PurchasesBySupplier.Clear();
+            PurchasesTopProducts.Clear();
+            InventoryRows.Clear();
+            InventoryLowStock.Clear();
+            InventoryOutOfStock.Clear();
+            InventoryStagnant.Clear();
+            InventoryTopByValue.Clear();
+            CustomerDebtRows.Clear();
+            ItemProfitRows.Clear();
+            ItemProfitBest.Clear();
+            ItemProfitWorst.Clear();
+
             OnPropertyChanged(nameof(ShowSalesEmptyState));
             OnPropertyChanged(nameof(ShowExpensesEmptyState));
+            OnPropertyChanged(nameof(ShowPurchasesEmptyState));
+            OnPropertyChanged(nameof(ShowInventoryEmptyState));
+            OnPropertyChanged(nameof(ShowCustomerDebtsEmptyState));
+            OnPropertyChanged(nameof(ShowItemProfitEmptyState));
         }
 
         private void SetStatus(string message, bool error = false)
