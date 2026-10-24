@@ -2,10 +2,10 @@
 
 ## Status
 **Date:** 2026-10-24
-**Task:** "التقارير المحاسبية" (Accounting Reports) screen — **Part A**: global date filter + Profit Summary + Sales report + Expenses report
-**Branch:** `feature-reports-a` (from `main`)
+**Task:** "التقارير المحاسبية" (Accounting Reports) screen — **Part B**: 4 additional read-only tabs (Purchases, Inventory valuation, Customer debts, Item profitability)
+**Branch:** `feature-reports-b` (from `feature-reports-a`); Part A committed on `feature-reports-a`
 **Status:** ✅ Implementation COMPLETE — build verified, manual UI testing pending
-**Note:** READ-ONLY screen — it never modifies data. The `TabControl` is already structured so Part B can add more tabs.
+**Note:** READ-ONLY screen — it never modifies data. Part A's filter, service, styles and rules are reused; no schema change, no `.db` touched, app not run.
 
 ---
 
@@ -38,8 +38,39 @@
 `dotnet build CarPartManager.csproj` → **Build succeeded, 0 Warning(s), 0 Error(s)**.
 
 ### TODO — Part B
-- Add more report tabs (the `TabControl` + `SelectedTabIndex` binding is already in place).
-- Storing a real unit cost on each sales line in a future task would turn COGS from estimated into exact.
+- ✅ Done — see "Reports — Part B" below.
+
+---
+
+## Reports — Part B (2026-10-24)
+
+### Prerequisites verified
+- Part A present (tabs structure, global date filter, `IReportsService`/`SqliteReportsService`) — committed on `feature-reports-a`.
+- Inventory screen merged on `main` (`StockMovement` ledger, `MinimumStock`/`ProductModel.IsLowStock`, `IInventoryService`).
+
+### Tabs added (all READ-ONLY, reuse Part A filter/service/style)
+1. **المشتريات** — posted (`معتمدة`) purchase invoices only; total + count cards, comparison to the equal-length previous window, daily table (cross-checked against its own total), by-supplier table (shown only when supplier data exists, otherwise a visible Arabic note), top purchased products.
+2. **تقييم المخزون** — current state (NOT date-filtered, labeled in the tab note with a generation timestamp). Value = Σ(available qty × current cost). Cards: total value, product count, below min level, out of stock, stagnant. Tables: top by value, below min level, out of stock, stagnant. `StagnantDays` defaults to 60 and is adjustable from a ComboBox (30/60/90/180); changing it reloads only this tab.
+3. **مديونيات العملاء** — customers with a positive balance, balance, last payment date, oldest unpaid invoice date, total debt. Balance **reuses** `SqliteCustomerService.GetAllCustomersAsync()` (the Customers screen formula: opening + Σ(GrandTotal − PaidAmount of `معتمدة`) − Σ(non-cancelled payments), floored at 0) — not reimplemented. Shows the formula note + "not affected by the date filter".
+4. **ربحية الأصناف** — per product in the period: quantity sold, sales value, cost, profit, margin %; plus best/worst tables. Item sales value distributes the invoice discount proportionally (`(SubTotal − Discount)/SubTotal × qty×price`) and subtracts returns; cost uses the current `Products.PurchasePrice` → **التكلفة تقديرية** warning shown.
+
+### Rules respected
+- No schema changes, no `.db` touched, app not run, no new packages. Aggregation is DB-side with projections + `AsNoTracking`; decimal Sum/multiply/compare done in memory after projection (SQLite cannot aggregate `decimal`). Draft/cancelled excluded everywhere. Async + loading overlay. Arabic RTL, empty states, no overlapping, resizes cleanly (Style triggers / overlay pattern — no local `Visibility` bindings).
+
+### Cross-checks (visible warnings, not silent)
+- Purchases: daily-table total is re-summed from `PurchasesDaily` and shown next to the card total.
+- Inventory: `Σ(rows.StockValue)` is recomputed and compared to the report total; mismatch → visible data warning.
+- Item profitability: total profit is compared to Part A's gross profit; mismatch → visible warning naming probable causes (discount on a zero-total invoice, return value ≠ its lines, inconsistent invoice data).
+
+### Files
+- New: `Models/PurchaseReportModel.cs`, `Models/InventoryValuationModel.cs`, `Models/CustomerDebtReportModel.cs`, `Models/ItemProfitabilityModel.cs`.
+- Modified: `Services/IReportsService.cs` (+4 methods), `Services/SqliteReportsService.cs` (4 implementations + helpers), `ViewModels/ReportsViewModel.cs` (per-tab state/loaders/apply + cross-checks), `Views/ReportsView.xaml` (+4 `TabItem`s).
+
+### Build
+`dotnet build CarPartManager.csproj` → **Build succeeded, 0 Warning(s), 0 Error(s)** (after the service/models step, after the ViewModel step, and after the XAML step).
+
+### TODO
+- Storing a real unit cost on each sales line in a future task would turn COGS/item cost from estimated into exact.
 
 ---
 
