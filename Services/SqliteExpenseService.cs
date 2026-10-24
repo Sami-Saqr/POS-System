@@ -15,6 +15,21 @@ namespace CarPartManager.Services
 
         public const string DefaultPaymentMethod = "نقدي";
 
+        /// <summary>
+        /// يعرض رسالة الخطأ الأعمق (خطأ SQLite الأصلي مثلاً) بدلاً من رسالة EF العامة
+        /// "An error occurred while saving the entity changes"، مع الحفاظ على قابلية قراءتها للمستخدم.
+        /// </summary>
+        private static string Describe(Exception ex)
+        {
+            var current = ex;
+            while (current.InnerException != null)
+            {
+                current = current.InnerException;
+            }
+
+            return string.IsNullOrWhiteSpace(current.Message) ? ex.Message : current.Message.Trim();
+        }
+
         // ── المصروفات ──────────────────────────────────────────────────────────
 
         public async Task<IEnumerable<ExpenseModel>> GetExpensesAsync(
@@ -81,7 +96,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"تعذر تحميل قائمة المصروفات: {ex.Message}", ex);
+                throw new InvalidOperationException($"تعذر تحميل قائمة المصروفات: {Describe(ex)}", ex);
             }
         }
 
@@ -102,7 +117,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"تعذر تحميل بيانات المصروف رقم {id}: {ex.Message}", ex);
+                throw new InvalidOperationException($"تعذر تحميل بيانات المصروف رقم {id}: {Describe(ex)}", ex);
             }
         }
 
@@ -163,7 +178,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"تعذر حساب ملخص المصروفات: {ex.Message}", ex);
+                throw new InvalidOperationException($"تعذر حساب ملخص المصروفات: {Describe(ex)}", ex);
             }
         }
 
@@ -201,7 +216,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"فشل حفظ المصروف في قاعدة البيانات: {ex.Message}", ex);
+                throw new InvalidOperationException($"فشل حفظ المصروف في قاعدة البيانات: {Describe(ex)}", ex);
             }
         }
 
@@ -276,7 +291,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"فشل تحديث بيانات المصروف: {ex.Message}", ex);
+                throw new InvalidOperationException($"فشل تحديث بيانات المصروف: {Describe(ex)}", ex);
             }
         }
 
@@ -327,7 +342,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"فشل إلغاء المصروف: {ex.Message}", ex);
+                throw new InvalidOperationException($"فشل إلغاء المصروف: {Describe(ex)}", ex);
             }
         }
 
@@ -345,7 +360,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"تعذر تحميل سجل تعديلات المصروف: {ex.Message}", ex);
+                throw new InvalidOperationException($"تعذر تحميل سجل تعديلات المصروف: {Describe(ex)}", ex);
             }
         }
 
@@ -383,7 +398,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"تعذر تحميل تصنيفات المصروفات: {ex.Message}", ex);
+                throw new InvalidOperationException($"تعذر تحميل تصنيفات المصروفات: {Describe(ex)}", ex);
             }
         }
 
@@ -423,7 +438,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"فشل إضافة التصنيف: {ex.Message}", ex);
+                throw new InvalidOperationException($"فشل إضافة التصنيف: {Describe(ex)}", ex);
             }
         }
 
@@ -441,7 +456,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"فشل تحديث حالة التصنيف: {ex.Message}", ex);
+                throw new InvalidOperationException($"فشل تحديث حالة التصنيف: {Describe(ex)}", ex);
             }
         }
 
@@ -463,7 +478,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"تعذر التحقق من اسم التصنيف: {ex.Message}", ex);
+                throw new InvalidOperationException($"تعذر التحقق من اسم التصنيف: {Describe(ex)}", ex);
             }
         }
 
@@ -478,7 +493,7 @@ namespace CarPartManager.Services
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"تعذر حساب عدد مصروفات التصنيف: {ex.Message}", ex);
+                throw new InvalidOperationException($"تعذر حساب عدد مصروفات التصنيف: {Describe(ex)}", ex);
             }
         }
     }
